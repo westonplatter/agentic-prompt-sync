@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 /// Default manifest filename
-pub const DEFAULT_MANIFEST_NAME: &str = "promptsync.yaml";
+pub const DEFAULT_MANIFEST_NAME: &str = "aps.yaml";
 
 /// The main manifest structure
 #[derive(Debug, Serialize, Deserialize, Clone)]

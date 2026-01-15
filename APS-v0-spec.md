@@ -42,8 +42,8 @@ src/
 
 - **Tool name:** aps
 - **Binary:** `aps`
-- **Manifest:** `promptsync.yaml` (default)
-- **Lockfile:** `.promptsync.lock`
+- **Manifest:** `aps.yaml` (default)
+- **Lockfile:** `.aps.lock`
 - **Backups:** `.aps-backups/`
 
 ---
@@ -177,7 +177,7 @@ If install would overwrite existing content:
 
 ## Lockfile
 
-Stored at `.promptsync.lock`.
+Stored at `.aps.lock`.
 
 Per item:
 
@@ -267,8 +267,8 @@ Each checkpoint results in a working CLI.
 **Implementation:** `src/main.rs`, `src/cli.rs`
 
 ### Checkpoint 1 — `aps init` ✅ COMPLETE
-- Creates `promptsync.yaml` manifest with example entry
-- Adds `.promptsync.lock` and `.aps-backups/` to `.gitignore`
+- Creates `aps.yaml` manifest with example entry
+- Adds `.aps.lock` and `.aps-backups/` to `.gitignore`
 - Idempotent behavior (errors if manifest exists)
 
 **Implementation:** `src/commands.rs::cmd_init()`
@@ -302,7 +302,7 @@ Each checkpoint results in a working CLI.
 **Implementation:** `src/backup.rs`, `src/install.rs`
 
 ### Checkpoint 6 — Lockfile + `aps status` ✅ COMPLETE
-- Write `.promptsync.lock` after install with:
+- Write `.aps.lock` after install with:
   - source, dest, resolved_ref, commit, last_updated_at, checksum
 - SHA256 checksums enable no-op detection (idempotent pulls)
 - `aps status` displays all synced entries with formatted output

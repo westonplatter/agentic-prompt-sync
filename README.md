@@ -36,7 +36,7 @@ The binary will be available at `target/release/aps`.
 aps init
 ```
 
-This creates a `promptsync.yaml` manifest file with an example entry.
+This creates a `aps.yaml` manifest file with an example entry.
 
 2. **Edit the manifest** to define your assets:
 
@@ -75,7 +75,7 @@ aps status
 ### Common Options
 
 - `--verbose` - Enable verbose logging
-- `--manifest <path>` - Specify manifest file path (default: `promptsync.yaml`)
+- `--manifest <path>` - Specify manifest file path (default: `aps.yaml`)
 
 ### Pull Options
 
@@ -85,7 +85,7 @@ aps status
 
 ## Configuration
 
-### Manifest File (`promptsync.yaml`)
+### Manifest File (`aps.yaml`)
 
 ```yaml
 entries:
@@ -106,7 +106,7 @@ entries:
 | `cursor_rules` | Directory of Cursor rules | `./.cursor/rules/` |
 | `cursor_skills_root` | Directory with skill subdirs | `./.cursor/skills/` |
 
-### Lockfile (`.promptsync.lock`)
+### Lockfile (`.aps.lock`)
 
 The lockfile tracks installed assets and is automatically created/updated by `aps pull`. It stores:
 
