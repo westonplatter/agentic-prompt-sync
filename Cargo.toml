@@ -1,0 +1,35 @@
+[package]
+name = "aps"
+version = "0.1.0"
+edition = "2021"
+description = "Manifest-driven CLI for syncing agentic assets"
+authors = ["APS Contributors"]
+
+[dependencies]
+# Argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Interactive prompts
+dialoguer = "0.11"
+
+# Errors & diagnostics
+miette = { version = "7", features = ["fancy"] }
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+
+# Date/time for timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# Checksum computation
+sha2 = "0.10"
+hex = "0.4"
+
+# File operations
+walkdir = "2"
