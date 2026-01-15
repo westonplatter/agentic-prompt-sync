@@ -8,8 +8,8 @@ This document defines the **v0 specification** for **APS (Agentic Prompt Sync)**
 
 - **Tool name:** aps
 - **Binary:** `aps`
-- **Manifest:** `promptshare.yaml` (default)
-- **Lockfile:** `.promptshare.lock`
+- **Manifest:** `promptsync.yaml` (default)
+- **Lockfile:** `.promptsync.lock`
 - **Backups:** `.aps-backups/`
 
 ---
@@ -143,7 +143,7 @@ If install would overwrite existing content:
 
 ## Lockfile
 
-Stored at `.promptshare.lock`.
+Stored at `.promptsync.lock`.
 
 Per item:
 
