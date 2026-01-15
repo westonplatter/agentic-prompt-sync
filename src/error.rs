@@ -80,6 +80,13 @@ pub enum ApsError {
         help("Run `aps pull` first to create a lockfile")
     )]
     LockfileNotFound,
+
+    #[error("Skill missing SKILL.md: {skill_name}")]
+    #[diagnostic(
+        code(aps::skill::missing_skill_md),
+        help("Create a SKILL.md file in the skill directory, or remove --strict to continue with a warning")
+    )]
+    SkillMdMissing { skill_name: String },
 }
 
 impl ApsError {

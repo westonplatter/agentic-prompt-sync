@@ -1,0 +1,19 @@
+entries:
+  - id: my-agents
+    kind: agents_md
+    source:
+      type: filesystem
+      root: ../shared-assets
+    path: AGENTS.md
+  - id: my-rules
+    kind: cursor_rules
+    source:
+      type: filesystem
+      root: ../shared-assets
+    path: rules
+  - id: my-skills
+    kind: cursor_skills_root
+    source:
+      type: filesystem
+      root: ../shared-assets
+    path: skills

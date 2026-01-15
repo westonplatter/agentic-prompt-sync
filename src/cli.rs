@@ -72,6 +72,10 @@ pub struct PullArgs {
     /// Show what would be done without making changes
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Treat warnings as errors (e.g., missing SKILL.md)
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[derive(Parser, Debug)]

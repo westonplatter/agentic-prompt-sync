@@ -126,6 +126,7 @@ pub fn cmd_pull(args: PullArgs) -> Result<()> {
     let options = InstallOptions {
         dry_run: args.dry_run,
         yes: args.yes,
+        strict: args.strict,
     };
 
     // Install all entries
@@ -187,6 +188,11 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
                     }
                 } else {
                     println!("  [OK] {} -> {:?}", entry.id, source_path);
+
+                    // For cursor_skills_root, validate SKILL.md in each skill folder
+                    if entry.kind == crate::manifest::AssetKind::CursorSkillsRoot {
+                        validate_skills_directory(&source_path, args.strict)?;
+                    }
                 }
             }
             crate::manifest::Source::Git { url, .. } => {
@@ -197,6 +203,35 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
     }
 
     println!("\nManifest is valid.");
+    Ok(())
+}
+
+/// Validate skills directory for SKILL.md presence
+fn validate_skills_directory(skills_dir: &Path, strict: bool) -> Result<()> {
+    for entry in std::fs::read_dir(skills_dir)
+        .map_err(|e| ApsError::io(e, format!("Failed to read skills directory {:?}", skills_dir)))?
+    {
+        let entry = entry.map_err(|e| ApsError::io(e, "Failed to read directory entry"))?;
+        let skill_path = entry.path();
+
+        // Only check directories
+        if !skill_path.is_dir() {
+            continue;
+        }
+
+        let skill_name = entry.file_name().to_string_lossy().to_string();
+        let skill_md_path = skill_path.join("SKILL.md");
+
+        if !skill_md_path.exists() {
+            if strict {
+                return Err(ApsError::SkillMdMissing { skill_name });
+            } else {
+                println!("    Warning: Skill '{}' is missing SKILL.md", skill_name);
+            }
+        } else {
+            println!("    [OK] Skill '{}' has SKILL.md", skill_name);
+        }
+    }
     Ok(())
 }
 

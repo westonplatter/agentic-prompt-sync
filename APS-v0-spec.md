@@ -15,8 +15,8 @@ This document defines the **v0 specification** for **APS (Agentic Prompt Sync)**
 | 4 | Filesystem Source + `agents_md` | ✅ Complete |
 | 5 | Conflict Handling | ✅ Complete |
 | 6 | Lockfile + `aps status` | ✅ Complete |
-| 7 | Directory Install (`cursor_rules`) | ⏳ Pending |
-| 8 | Skills Root Adapter | ⏳ Pending |
+| 7 | Directory Install (`cursor_rules`) | ✅ Complete |
+| 8 | Skills Root Adapter | ✅ Complete |
 | 9 | Git Source (Read-only) | ⏳ Pending |
 | 10 | Git Source Install | ⏳ Pending |
 | 11 | Polish | ⏳ Pending |
@@ -311,17 +311,20 @@ Each checkpoint results in a working CLI.
 
 ---
 
-### Checkpoint 7 — Directory Install (`cursor_rules`) ⏳ PENDING
-- Recursive copy
-- Conflict detection
-- Checksums
+### Checkpoint 7 — Directory Install (`cursor_rules`) ✅ COMPLETE
+- Recursive directory copy preserving structure
+- Conflict detection with backup creation
+- SHA256 checksums for no-op detection
 
-**Note:** Basic directory copy is implemented but needs cursor_rules-specific handling.
+**Implementation:** `src/install.rs::copy_directory()`
 
-### Checkpoint 8 — Skills Root Adapter ⏳ PENDING
-- Skill folder fan-out
-- `SKILL.md` warnings
-- `--strict` enforcement
+### Checkpoint 8 — Skills Root Adapter ✅ COMPLETE
+- Skill folder fan-out: each immediate child directory treated as a skill
+- `SKILL.md` warnings shown when missing (case-sensitive check)
+- `--strict` flag turns warnings into errors (supported in both `pull` and `validate`)
+- Skills still copied even with warnings (unless `--strict`)
+
+**Implementation:** `src/install.rs::install_skills_root()`, `validate_skills_root()`, `src/commands.rs::validate_skills_directory()`
 
 ### Checkpoint 9 — Git Source (Read-only) ⏳ PENDING
 - Clone/fetch

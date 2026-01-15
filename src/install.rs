@@ -12,6 +12,7 @@ use tracing::{debug, info};
 pub struct InstallOptions {
     pub dry_run: bool,
     pub yes: bool,
+    pub strict: bool,
 }
 
 /// Result of an install operation
@@ -120,8 +121,12 @@ pub fn install_entry(
     // Perform the install
     if options.dry_run {
         println!("[dry-run] Would install {} to {:?}", entry.id, dest_path);
+        // Still validate skills in dry-run mode
+        if entry.kind == AssetKind::CursorSkillsRoot {
+            validate_skills_root(&source_path, options.strict)?;
+        }
     } else {
-        install_asset(&entry.kind, &source_path, &dest_path)?;
+        install_asset(&entry.kind, &source_path, &dest_path, options.strict)?;
         println!("Installed {} to {:?}", entry.id, dest_path);
     }
 
@@ -160,7 +165,7 @@ fn resolve_source_path(source: &Source, path: &str, manifest_dir: &Path) -> Resu
 }
 
 /// Install an asset based on its kind
-fn install_asset(kind: &AssetKind, source: &Path, dest: &Path) -> Result<()> {
+fn install_asset(kind: &AssetKind, source: &Path, dest: &Path, strict: bool) -> Result<()> {
     match kind {
         AssetKind::AgentsMd => {
             // Single file copy
@@ -174,12 +179,79 @@ fn install_asset(kind: &AssetKind, source: &Path, dest: &Path) -> Result<()> {
                 .map_err(|e| ApsError::io(e, format!("Failed to copy {:?} to {:?}", source, dest)))?;
             debug!("Copied file {:?} to {:?}", source, dest);
         }
-        AssetKind::CursorRules | AssetKind::CursorSkillsRoot => {
-            // Directory copy (Checkpoint 7-8)
-            // For now, basic directory copy
+        AssetKind::CursorRules => {
+            // Directory copy preserving structure
             copy_directory(source, dest)?;
         }
+        AssetKind::CursorSkillsRoot => {
+            // Skills root: each immediate child is a skill folder
+            install_skills_root(source, dest, strict)?;
+        }
     }
+    Ok(())
+}
+
+/// Validate skills root for missing SKILL.md files
+fn validate_skills_root(source: &Path, strict: bool) -> Result<()> {
+    for entry in std::fs::read_dir(source)
+        .map_err(|e| ApsError::io(e, format!("Failed to read skills directory {:?}", source)))?
+    {
+        let entry = entry.map_err(|e| ApsError::io(e, "Failed to read directory entry"))?;
+        let skill_path = entry.path();
+
+        // Only process directories (skills)
+        if !skill_path.is_dir() {
+            continue;
+        }
+
+        let skill_name = entry.file_name().to_string_lossy().to_string();
+        let skill_md_path = skill_path.join("SKILL.md");
+
+        if !skill_md_path.exists() {
+            if strict {
+                return Err(ApsError::SkillMdMissing { skill_name });
+            } else {
+                println!("Warning: Skill '{}' is missing SKILL.md", skill_name);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Install a skills root directory (each immediate child is a skill)
+fn install_skills_root(source: &Path, dest: &Path, strict: bool) -> Result<()> {
+    // First validate skills
+    validate_skills_root(source, strict)?;
+
+    // Create destination directory
+    if dest.exists() {
+        std::fs::remove_dir_all(dest)
+            .map_err(|e| ApsError::io(e, format!("Failed to remove existing directory {:?}", dest)))?;
+    }
+    std::fs::create_dir_all(dest)
+        .map_err(|e| ApsError::io(e, format!("Failed to create directory {:?}", dest)))?;
+
+    // Process each immediate child directory as a skill
+    for entry in std::fs::read_dir(source)
+        .map_err(|e| ApsError::io(e, format!("Failed to read skills directory {:?}", source)))?
+    {
+        let entry = entry.map_err(|e| ApsError::io(e, "Failed to read directory entry"))?;
+        let skill_src = entry.path();
+
+        // Only process directories (skills)
+        if !skill_src.is_dir() {
+            debug!("Skipping non-directory {:?}", skill_src);
+            continue;
+        }
+
+        let skill_name = entry.file_name();
+        let skill_dest = dest.join(&skill_name);
+
+        debug!("Installing skill {:?} to {:?}", skill_name, skill_dest);
+        copy_directory(&skill_src, &skill_dest)?;
+    }
+
+    debug!("Installed skills root {:?} to {:?}", source, dest);
     Ok(())
 }
 

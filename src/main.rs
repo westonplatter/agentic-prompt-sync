@@ -44,5 +44,5 @@ fn main() -> Result<()> {
     };
 
     // Convert our error type to miette for nice display
-    result.map_err(|e| miette::miette!("{:?}", e))
+    result.map_err(|e| miette::miette!("{}", e))
 }
