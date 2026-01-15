@@ -3,7 +3,7 @@ use crate::checksum::compute_source_checksum;
 use crate::error::{ApsError, Result};
 use crate::git::{clone_and_resolve, ResolvedGitSource};
 use crate::lockfile::{LockedEntry, Lockfile};
-use crate::manifest::{AssetKind, Entry, Manifest, Source};
+use crate::manifest::{AssetKind, Entry, Source};
 use dialoguer::Confirm;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -33,7 +33,6 @@ pub struct InstallResult {
     pub id: String,
     pub installed: bool,
     pub skipped_no_change: bool,
-    pub backed_up: bool,
     pub locked_entry: Option<LockedEntry>,
     pub warnings: Vec<String>,
 }
@@ -57,23 +56,6 @@ struct ResolvedSource {
 struct GitInfo {
     resolved_ref: String,
     commit_sha: String,
-}
-
-/// Install all entries from a manifest
-pub fn install_all(
-    manifest: &Manifest,
-    manifest_dir: &Path,
-    lockfile: &Lockfile,
-    options: &InstallOptions,
-) -> Result<Vec<InstallResult>> {
-    let mut results = Vec::new();
-
-    for entry in &manifest.entries {
-        let result = install_entry(entry, manifest_dir, lockfile, options)?;
-        results.push(result);
-    }
-
-    Ok(results)
 }
 
 /// Install a single entry
@@ -107,7 +89,6 @@ pub fn install_entry(
             id: entry.id.clone(),
             installed: false,
             skipped_no_change: true,
-            backed_up: false,
             locked_entry: None,
             warnings: Vec::new(),
         });
@@ -121,7 +102,6 @@ pub fn install_entry(
     // For directory assets (CursorRules, CursorSkillsRoot) using symlinks, we use
     // file-level symlinks which can coexist with other files in the directory.
     // Only check for conflicts on single-file assets or when copying.
-    let mut backed_up = false;
     let should_check_conflict = match entry.kind {
         AssetKind::AgentsMd => true, // Single file - always check
         AssetKind::CursorRules | AssetKind::CursorSkillsRoot => {
@@ -163,7 +143,6 @@ pub fn install_entry(
             // Create backup
             let backup_path = create_backup(manifest_dir, &dest_path)?;
             println!("Created backup at: {:?}", backup_path);
-            backed_up = true;
         }
     }
 
@@ -224,7 +203,6 @@ pub fn install_entry(
         id: entry.id.clone(),
         installed: !options.dry_run,
         skipped_no_change: false,
-        backed_up,
         locked_entry: Some(locked_entry),
         warnings,
     })
