@@ -4,3 +4,7 @@
 .aps.lock
 .aps-backups/
 aps.yaml
+
+AGENTS.md
+.cursor
+
