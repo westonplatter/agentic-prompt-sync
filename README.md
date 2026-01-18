@@ -107,6 +107,48 @@ entries:
 | `cursor_skills_root` | Directory with skill subdirs | `./.cursor/skills/` |
 | `agent_skill` | Claude agent skill directory | `./.claude/skills/` |
 
+### Source Types
+
+APS supports two source types for pulling assets:
+
+#### Filesystem Source
+
+Pull assets from a local directory. Useful for sharing assets across projects on the same machine.
+
+```yaml
+source:
+  type: filesystem
+  root: ../shared-assets      # Required: root directory path
+  path: my-asset              # Optional: path within root
+  symlink: true               # Optional: use symlinks (default: true)
+```
+
+| Property | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `root` | Yes | - | Root directory for resolving paths (supports `~` and `$HOME`) |
+| `path` | No | `.` | Path within the root directory |
+| `symlink` | No | `true` | Create symlinks instead of copying files |
+
+#### Git Source
+
+Pull assets from a git repository. Supports both SSH and HTTPS URLs.
+
+```yaml
+source:
+  type: git
+  repo: git@github.com:org/repo.git   # Required: repository URL
+  ref: main                            # Optional: branch, tag, or commit
+  path: assets/rules                   # Optional: path within repo
+  shallow: true                        # Optional: use shallow clone
+```
+
+| Property | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `repo` | Yes | - | Repository URL (SSH or HTTPS) |
+| `ref` | No | `auto` | Git ref (branch, tag, commit). `auto` tries `main` then `master` |
+| `path` | No | `.` | Path within the repository |
+| `shallow` | No | `true` | Use shallow clone for faster fetches |
+
 ### Lockfile (`.aps.lock`)
 
 The lockfile tracks installed assets and is automatically created/updated by `aps pull`. It stores:
