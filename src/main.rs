@@ -7,6 +7,7 @@ mod git;
 mod install;
 mod lockfile;
 mod manifest;
+mod sources;
 
 use clap::Parser;
 use cli::{Cli, Commands};

@@ -1,6 +1,5 @@
 use crate::cli::{InitArgs, ManifestFormat, PullArgs, StatusArgs, ValidateArgs};
 use crate::error::{ApsError, Result};
-use crate::git::clone_and_resolve;
 use crate::install::{install_entry, InstallOptions, InstallResult};
 use crate::lockfile::{display_status, Lockfile, LOCKFILE_NAME};
 use crate::manifest::{
@@ -224,54 +223,52 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
 
     println!("\nValidating entries:");
     for entry in &manifest.entries {
-        let path = entry.source.path();
-        match &entry.source {
-            crate::manifest::Source::Filesystem { root, .. } => {
-                let root_path = if Path::new(root).is_absolute() {
-                    std::path::PathBuf::from(root)
-                } else {
-                    base_dir.join(root)
-                };
-                let source_path = if path == "." {
-                    root_path.clone()
-                } else {
-                    root_path.join(path)
-                };
+        let source_type = entry.source.source_type();
 
-                if !source_path.exists() {
-                    let warning = format!("Source path not found: {:?}", source_path);
-                    if args.strict {
-                        return Err(ApsError::SourcePathNotFound { path: source_path });
+        match source_type {
+            "filesystem" => {
+                // For filesystem sources, resolve and check path exists
+                match entry.source.resolve(&base_dir) {
+                    Ok(resolved) => {
+                        if !resolved.source_path.exists() {
+                            let warning = format!("Source path not found: {:?}", resolved.source_path);
+                            if args.strict {
+                                return Err(ApsError::SourcePathNotFound { path: resolved.source_path });
+                            }
+                            println!("  [WARN] {} - {}", entry.id, warning);
+                            warnings.push(warning);
+                        } else {
+                            // Validate skills if applicable
+                            if entry.kind == AssetKind::CursorSkillsRoot {
+                                let skill_warnings = validate_skills_for_validate(&resolved.source_path, &entry.id, args.strict)?;
+                                warnings.extend(skill_warnings);
+                            }
+                            println!("  [OK] {} ({})", entry.id, entry.source.display_name());
+                        }
                     }
-                    println!("  [WARN] {} - {}", entry.id, warning);
-                    warnings.push(warning);
-                } else {
-                    // Validate skills if applicable
-                    if entry.kind == AssetKind::CursorSkillsRoot {
-                        let skill_warnings = validate_skills_for_validate(&source_path, &entry.id, args.strict)?;
-                        warnings.extend(skill_warnings);
+                    Err(e) => {
+                        if args.strict {
+                            return Err(e);
+                        }
+                        let warning = format!("Failed to resolve source: {}", e);
+                        println!("  [WARN] {} - {}", entry.id, warning);
+                        warnings.push(warning);
                     }
-                    println!("  [OK] {} (filesystem: {})", entry.id, root);
                 }
             }
-            crate::manifest::Source::Git { repo, r#ref, shallow, .. } => {
-                // Validate git source by attempting to clone
-                print!("  [..] {} (git: {}) - checking...", entry.id, repo);
+            "git" => {
+                // Validate git source by attempting to resolve (clone)
+                print!("  [..] {} ({}) - checking...", entry.id, entry.source.display_name());
                 std::io::stdout().flush().ok();
 
-                match clone_and_resolve(repo, r#ref, *shallow) {
+                match entry.source.resolve(&base_dir) {
                     Ok(resolved) => {
                         // Check if path exists in repo
-                        let source_path = if path == "." {
-                            resolved.repo_path.clone()
-                        } else {
-                            resolved.repo_path.join(path)
-                        };
-                        if !source_path.exists() {
-                            let warning = format!("Path '{}' not found in repository", path);
+                        if !resolved.source_path.exists() {
+                            let warning = format!("Path '{}' not found in repository", entry.source.path());
                             if args.strict {
                                 println!(" FAILED");
-                                return Err(ApsError::SourcePathNotFound { path: source_path });
+                                return Err(ApsError::SourcePathNotFound { path: resolved.source_path });
                             }
                             println!(" WARN");
                             println!("       Warning: {}", warning);
@@ -279,10 +276,15 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
                         } else {
                             // Validate skills if applicable
                             if entry.kind == AssetKind::CursorSkillsRoot {
-                                let skill_warnings = validate_skills_for_validate(&source_path, &entry.id, args.strict)?;
+                                let skill_warnings = validate_skills_for_validate(&resolved.source_path, &entry.id, args.strict)?;
                                 warnings.extend(skill_warnings);
                             }
-                            println!("\r  [OK] {} (git: {} @ {})", entry.id, repo, resolved.resolved_ref);
+                            // Get resolved ref info if available
+                            let ref_info = resolved.git_info
+                                .as_ref()
+                                .map(|g| format!(" @ {}", g.resolved_ref))
+                                .unwrap_or_default();
+                            println!("\r  [OK] {} ({}{})", entry.id, entry.source.display_name(), ref_info);
                         }
                     }
                     Err(e) => {
@@ -296,6 +298,15 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
                         warnings.push(warning);
                     }
                 }
+            }
+            _ => {
+                // Unknown source type
+                let warning = format!("Unknown source type: {}", source_type);
+                if args.strict {
+                    return Err(ApsError::InvalidSourceType { source_type: source_type.to_string() });
+                }
+                println!("  [WARN] {} - {}", entry.id, warning);
+                warnings.push(warning);
             }
         }
     }

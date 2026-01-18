@@ -1,5 +1,6 @@
 use crate::error::{ApsError, Result};
-use serde::{Deserialize, Serialize};
+use crate::sources::{FilesystemSource, SourceAdapter, SourceRegistry};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
@@ -8,7 +9,7 @@ use tracing::{debug, info};
 pub const DEFAULT_MANIFEST_NAME: &str = "aps.yaml";
 
 /// The main manifest structure
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     /// List of entries to sync
     #[serde(default)]
@@ -24,7 +25,7 @@ impl Default for Manifest {
 }
 
 /// A single entry in the manifest
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     /// Unique identifier for this entry
     pub id: String,
@@ -33,7 +34,11 @@ pub struct Entry {
     pub kind: AssetKind,
 
     /// The source to pull from
-    pub source: Source,
+    #[serde(
+        deserialize_with = "deserialize_source",
+        serialize_with = "serialize_source"
+    )]
+    pub source: Box<dyn SourceAdapter>,
 
     /// Optional destination override
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,17 +49,81 @@ pub struct Entry {
     pub include: Vec<String>,
 }
 
+/// Custom deserializer for Box<dyn SourceAdapter>
+fn deserialize_source<'de, D>(deserializer: D) -> std::result::Result<Box<dyn SourceAdapter>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_yaml::Value::deserialize(deserializer)?;
+    let registry = SourceRegistry::new();
+    registry
+        .parse(&value)
+        .map_err(serde::de::Error::custom)
+}
+
+/// Custom serializer for Box<dyn SourceAdapter>
+fn serialize_source<S>(
+    source: &Box<dyn SourceAdapter>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde::ser::SerializeMap;
+
+    // We need to serialize based on the source type
+    let source_type = source.source_type();
+
+    match source_type {
+        "filesystem" => {
+            // Downcast and serialize
+            if let Some(fs) = source.as_any().downcast_ref::<FilesystemSource>() {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("type", "filesystem")?;
+                map.serialize_entry("root", &fs.root)?;
+                if let Some(ref path) = fs.path {
+                    map.serialize_entry("path", path)?;
+                }
+                map.serialize_entry("symlink", &fs.symlink)?;
+                map.end()
+            } else {
+                Err(serde::ser::Error::custom("Failed to downcast FilesystemSource"))
+            }
+        }
+        "git" => {
+            use crate::sources::GitSource;
+            if let Some(git) = source.as_any().downcast_ref::<GitSource>() {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("type", "git")?;
+                map.serialize_entry("repo", &git.repo)?;
+                map.serialize_entry("ref", &git.r#ref)?;
+                if let Some(ref path) = git.path {
+                    map.serialize_entry("path", path)?;
+                }
+                map.serialize_entry("shallow", &git.shallow)?;
+                map.end()
+            } else {
+                Err(serde::ser::Error::custom("Failed to downcast GitSource"))
+            }
+        }
+        _ => Err(serde::ser::Error::custom(format!(
+            "Unknown source type: {}",
+            source_type
+        ))),
+    }
+}
+
 impl Entry {
     /// Create an example entry for the default manifest
     fn example() -> Self {
         Self {
             id: "my-agents".to_string(),
             kind: AssetKind::AgentsMd,
-            source: Source::Filesystem {
+            source: Box::new(FilesystemSource {
                 root: "../shared-assets".to_string(),
                 symlink: true,
                 path: Some("AGENTS.md".to_string()),
-            },
+            }),
             dest: None,
             include: Vec::new(),
         }
@@ -104,69 +173,6 @@ impl AssetKind {
             "agents_md" => Ok(AssetKind::AgentsMd),
             "agent_skill" => Ok(AssetKind::AgentSkill),
             _ => Err(ApsError::InvalidAssetKind { kind: s.to_string() }),
-        }
-    }
-}
-
-/// Source types for pulling assets
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum Source {
-    /// Git repository source
-    Git {
-        /// Repository URL (SSH or HTTPS)
-        #[serde(alias = "url")]
-        repo: String,
-        /// Git ref (branch, tag, commit) - "auto" tries main then master
-        #[serde(default = "default_ref")]
-        r#ref: String,
-        /// Whether to use shallow clone
-        #[serde(default = "default_shallow")]
-        shallow: bool,
-        /// Optional path within the repository
-        #[serde(default)]
-        path: Option<String>,
-    },
-    /// Local filesystem source
-    Filesystem {
-        /// Root directory for resolving paths
-        root: String,
-        /// Whether to create symlinks instead of copying files (default: true)
-        #[serde(default = "default_symlink")]
-        symlink: bool,
-        /// Optional path within the root directory
-        #[serde(default)]
-        path: Option<String>,
-    },
-}
-
-fn default_ref() -> String {
-    "auto".to_string()
-}
-
-fn default_shallow() -> bool {
-    true
-}
-
-fn default_symlink() -> bool {
-    true
-}
-
-impl Source {
-    /// Get a display name for the source
-    pub fn display_name(&self) -> String {
-        match self {
-            Source::Git { repo, .. } => repo.clone(),
-            Source::Filesystem { root, .. } => format!("filesystem:{}", root),
-        }
-    }
-
-    /// Get the path within the source (defaults to "." if not specified)
-    pub fn path(&self) -> &str {
-        match self {
-            Source::Git { path, .. } | Source::Filesystem { path, .. } => {
-                path.as_deref().unwrap_or(".")
-            }
         }
     }
 }

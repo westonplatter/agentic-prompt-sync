@@ -1,9 +1,8 @@
 use crate::backup::{create_backup, has_conflict};
 use crate::checksum::compute_source_checksum;
 use crate::error::{ApsError, Result};
-use crate::git::{clone_and_resolve, ResolvedGitSource};
 use crate::lockfile::{LockedEntry, Lockfile};
-use crate::manifest::{AssetKind, Entry, Source};
+use crate::manifest::{AssetKind, Entry};
 use dialoguer::Confirm;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -37,27 +36,6 @@ pub struct InstallResult {
     pub warnings: Vec<String>,
 }
 
-/// Resolved source information
-struct ResolvedSource {
-    /// Path to the actual source content
-    source_path: PathBuf,
-    /// Display name for the source
-    source_display: String,
-    /// Git-specific info (if applicable)
-    git_info: Option<GitInfo>,
-    /// Whether to create symlinks instead of copying (filesystem sources only)
-    use_symlink: bool,
-    /// Keep the temp dir alive for git sources
-    #[allow(dead_code)]
-    _temp_holder: Option<ResolvedGitSource>,
-}
-
-/// Git-specific resolution info
-struct GitInfo {
-    resolved_ref: String,
-    commit_sha: String,
-}
-
 /// Install a single entry
 pub fn install_entry(
     entry: &Entry,
@@ -67,8 +45,8 @@ pub fn install_entry(
 ) -> Result<InstallResult> {
     info!("Processing entry: {}", entry.id);
 
-    // Resolve source (handles both filesystem and git)
-    let resolved = resolve_source(&entry.source, manifest_dir)?;
+    // Resolve source using the adapter pattern
+    let resolved = entry.source.resolve(manifest_dir)?;
     debug!("Source path: {:?}", resolved.source_path);
 
     // Verify source exists
@@ -206,60 +184,6 @@ pub fn install_entry(
         locked_entry: Some(locked_entry),
         warnings,
     })
-}
-
-/// Resolve the source and return path + metadata
-fn resolve_source(source: &Source, manifest_dir: &Path) -> Result<ResolvedSource> {
-    let path = source.path();
-
-    match source {
-        Source::Filesystem { root, symlink, .. } => {
-            let root_path = if Path::new(root).is_absolute() {
-                PathBuf::from(root)
-            } else {
-                manifest_dir.join(root)
-            };
-            // If path is ".", use root directly; otherwise join
-            let source_path = if path == "." {
-                root_path
-            } else {
-                root_path.join(path)
-            };
-
-            Ok(ResolvedSource {
-                source_path,
-                source_display: source.display_name(),
-                git_info: None,
-                use_symlink: *symlink,
-                _temp_holder: None,
-            })
-        }
-        Source::Git { repo, r#ref, shallow, .. } => {
-            // Clone the repository
-            println!("Fetching from git: {}", repo);
-            let resolved = clone_and_resolve(repo, r#ref, *shallow)?;
-
-            // Build the path within the cloned repo
-            let source_path = if path == "." {
-                resolved.repo_path.clone()
-            } else {
-                resolved.repo_path.join(path)
-            };
-
-            let git_info = GitInfo {
-                resolved_ref: resolved.resolved_ref.clone(),
-                commit_sha: resolved.commit_sha.clone(),
-            };
-
-            Ok(ResolvedSource {
-                source_path,
-                source_display: source.display_name(),
-                git_info: Some(git_info),
-                use_symlink: false, // Git sources always copy (temp dir)
-                _temp_holder: Some(resolved),
-            })
-        }
-    }
 }
 
 /// Install an asset based on its kind
