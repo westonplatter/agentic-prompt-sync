@@ -80,6 +80,8 @@ pub enum AssetKind {
     CursorSkillsRoot,
     /// AGENTS.md file
     AgentsMd,
+    /// Agent skill directory (per agentskills.io spec)
+    AgentSkill,
 }
 
 impl AssetKind {
@@ -89,6 +91,7 @@ impl AssetKind {
             AssetKind::CursorRules => PathBuf::from(".cursor/rules"),
             AssetKind::CursorSkillsRoot => PathBuf::from(".cursor/skills"),
             AssetKind::AgentsMd => PathBuf::from("AGENTS.md"),
+            AssetKind::AgentSkill => PathBuf::from(".claude/skills"),
         }
     }
 
@@ -99,6 +102,7 @@ impl AssetKind {
             "cursor_rules" => Ok(AssetKind::CursorRules),
             "cursor_skills_root" => Ok(AssetKind::CursorSkillsRoot),
             "agents_md" => Ok(AssetKind::AgentsMd),
+            "agent_skill" => Ok(AssetKind::AgentSkill),
             _ => Err(ApsError::InvalidAssetKind { kind: s.to_string() }),
         }
     }

@@ -104,7 +104,7 @@ pub fn install_entry(
     // Only check for conflicts on single-file assets or when copying.
     let should_check_conflict = match entry.kind {
         AssetKind::AgentsMd => true, // Single file - always check
-        AssetKind::CursorRules | AssetKind::CursorSkillsRoot => {
+        AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {
             // For directory assets with symlinks, we add files to the directory
             // without backing up existing content from other sources
             !resolved.use_symlink
@@ -294,7 +294,7 @@ fn install_asset(
                 debug!("Copied file {:?} to {:?}", source, dest);
             }
         }
-        AssetKind::CursorRules | AssetKind::CursorSkillsRoot => {
+        AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {
             if use_symlink {
                 if include.is_empty() {
                     // Symlink individual files (not the directory itself)
