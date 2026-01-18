@@ -94,7 +94,7 @@ entries:
     source:
       type: filesystem         # Source type: filesystem or git
       root: ../shared-assets   # Root path for the source
-    path: AGENTS.md            # Path within the source
+      path: AGENTS.md          # Path within the source
     dest: ./AGENTS.md          # Optional: destination override
 ```
 
@@ -127,7 +127,7 @@ entries:
     source:
       type: filesystem
       root: ~/shared-prompts
-    path: AGENTS.md
+      path: AGENTS.md
 ```
 
 ### Sync Cursor rules from another project
@@ -139,7 +139,7 @@ entries:
     source:
       type: filesystem
       root: ../company-standards
-    path: cursor-rules
+      path: cursor-rules
     dest: ./.cursor/rules/
 ```
 
