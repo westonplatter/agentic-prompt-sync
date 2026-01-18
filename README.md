@@ -46,8 +46,8 @@ entries:
     kind: agents_md
     source:
       type: filesystem
-      root: ../shared-assets
-    path: AGENTS.md
+      root: $HOME
+      path: personal-generic-AGENTS.md
     dest: ./AGENTS.md
 ```
 
