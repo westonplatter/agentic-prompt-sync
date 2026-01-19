@@ -189,6 +189,16 @@ cargo build --release # Release build
 cargo test
 ```
 
+### Linting
+
+This project uses [Trunk](https://docs.trunk.io) for linting and code quality checks.
+
+```bash
+trunk check       # Run linters on modified files
+trunk fmt         # Format code
+trunk check list  # View available linters
+```
+
 ### Run with verbose logging
 
 ```bash

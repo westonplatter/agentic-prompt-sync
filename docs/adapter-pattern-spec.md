@@ -257,7 +257,7 @@ pub fn install_entry(
 
 ## File Structure
 
-```
+```text
 src/
 ├── main.rs
 ├── cli.rs
