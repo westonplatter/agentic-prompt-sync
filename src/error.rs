@@ -105,24 +105,6 @@ pub enum ApsError {
         help("Check the entry ID in your manifest")
     )]
     EntryNotFound { id: String },
-
-    #[error("Catalog not found")]
-    #[diagnostic(
-        code(aps::catalog::not_found),
-        help("Create an aps-catalog.yaml file, or use `--catalog <path>` to specify one")
-    )]
-    CatalogNotFound,
-
-    #[error("Failed to parse catalog: {message}")]
-    #[diagnostic(code(aps::catalog::parse_error))]
-    CatalogParseError { message: String },
-
-    #[error("Asset not found in catalog: {id}")]
-    #[diagnostic(
-        code(aps::catalog::asset_not_found),
-        help("Use `aps catalog list` to see available assets")
-    )]
-    AssetNotFound { id: String },
 }
 
 impl ApsError {
