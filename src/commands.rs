@@ -1,4 +1,5 @@
-use crate::cli::{InitArgs, ManifestFormat, PullArgs, StatusArgs, ValidateArgs};
+use crate::catalog::Catalog;
+use crate::cli::{CatalogGenerateArgs, InitArgs, ManifestFormat, PullArgs, StatusArgs, ValidateArgs};
 use crate::error::{ApsError, Result};
 use crate::install::{install_entry, InstallOptions, InstallResult};
 use crate::lockfile::{display_status, Lockfile};
@@ -355,6 +356,67 @@ pub fn cmd_status(args: StatusArgs) -> Result<()> {
 
     // Display status
     display_status(&lockfile);
+
+    Ok(())
+}
+
+/// Execute the `aps catalog generate` command
+pub fn cmd_catalog_generate(args: CatalogGenerateArgs) -> Result<()> {
+    // Discover and load manifest
+    let (manifest, manifest_path) = discover_manifest(args.manifest.as_deref())?;
+    let base_dir = manifest_dir(&manifest_path);
+
+    println!("Using manifest: {:?}", manifest_path);
+
+    // Validate manifest
+    validate_manifest(&manifest)?;
+
+    // Generate catalog
+    let catalog = Catalog::generate_from_manifest(&manifest, &base_dir)?;
+
+    // Determine output path
+    let output_path = args
+        .output
+        .unwrap_or_else(|| Catalog::path_for_manifest(&manifest_path));
+
+    // Save catalog
+    catalog.save(&output_path)?;
+
+    println!(
+        "Generated catalog with {} entries at {:?}",
+        catalog.entries.len(),
+        output_path
+    );
+
+    // Print summary by kind
+    let mut agents_md_count = 0;
+    let mut cursor_rules_count = 0;
+    let mut cursor_skills_count = 0;
+    let mut agent_skill_count = 0;
+
+    for entry in &catalog.entries {
+        match entry.kind {
+            AssetKind::AgentsMd => agents_md_count += 1,
+            AssetKind::CursorRules => cursor_rules_count += 1,
+            AssetKind::CursorSkillsRoot => cursor_skills_count += 1,
+            AssetKind::AgentSkill => agent_skill_count += 1,
+        }
+    }
+
+    println!();
+    println!("Summary:");
+    if agents_md_count > 0 {
+        println!("  agents_md: {} file(s)", agents_md_count);
+    }
+    if cursor_rules_count > 0 {
+        println!("  cursor_rules: {} file(s)", cursor_rules_count);
+    }
+    if cursor_skills_count > 0 {
+        println!("  cursor_skills_root: {} folder(s)", cursor_skills_count);
+    }
+    if agent_skill_count > 0 {
+        println!("  agent_skill: {} folder(s)", agent_skill_count);
+    }
 
     Ok(())
 }

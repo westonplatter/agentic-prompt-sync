@@ -31,6 +31,9 @@ pub enum Commands {
 
     /// Display status from lockfile
     Status(StatusArgs),
+
+    /// Catalog operations for asset discovery
+    Catalog(CatalogArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -94,4 +97,27 @@ pub struct StatusArgs {
     /// Path to the manifest file
     #[arg(long)]
     pub manifest: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogArgs {
+    #[command(subcommand)]
+    pub command: CatalogCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum CatalogCommands {
+    /// Generate a catalog from the manifest
+    Generate(CatalogGenerateArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogGenerateArgs {
+    /// Path to the manifest file
+    #[arg(long)]
+    pub manifest: Option<PathBuf>,
+
+    /// Output path for the catalog file (default: aps.catalog.yaml next to manifest)
+    #[arg(long, short)]
+    pub output: Option<PathBuf>,
 }

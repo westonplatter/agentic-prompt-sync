@@ -111,6 +111,17 @@ pub enum ApsError {
         help("Check the entry ID in your manifest")
     )]
     EntryNotFound { id: String },
+
+    #[error("Catalog not found")]
+    #[diagnostic(
+        code(aps::catalog::not_found),
+        help("Run `aps catalog generate` to create a catalog")
+    )]
+    CatalogNotFound,
+
+    #[error("Failed to read catalog: {message}")]
+    #[diagnostic(code(aps::catalog::read_error))]
+    CatalogReadError { message: String },
 }
 
 impl ApsError {

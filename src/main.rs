@@ -1,4 +1,5 @@
 mod backup;
+mod catalog;
 mod checksum;
 mod cli;
 mod commands;
@@ -10,8 +11,8 @@ mod orphan;
 mod sources;
 
 use clap::Parser;
-use cli::{Cli, Commands};
-use commands::{cmd_init, cmd_pull, cmd_status, cmd_validate};
+use cli::{CatalogCommands, Cli, Commands};
+use commands::{cmd_catalog_generate, cmd_init, cmd_pull, cmd_status, cmd_validate};
 use miette::Result;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
@@ -42,6 +43,9 @@ fn main() -> Result<()> {
         Commands::Pull(args) => cmd_pull(args),
         Commands::Validate(args) => cmd_validate(args),
         Commands::Status(args) => cmd_status(args),
+        Commands::Catalog(args) => match args.command {
+            CatalogCommands::Generate(gen_args) => cmd_catalog_generate(gen_args),
+        },
     };
 
     // Convert our error type to miette for nice display
