@@ -3,9 +3,9 @@ use crate::catalog::{
     DEFAULT_CATALOG_NAME,
 };
 use crate::cli::{
-    CatalogAddArgs, CatalogArgs, CatalogCommands, CatalogInfoArgs, CatalogInitArgs,
-    CatalogListArgs, CatalogSearchArgs, ContextArgs, InitArgs, ManifestFormat, OutputFormat,
-    PullArgs, StatusArgs, SuggestArgs, ValidateArgs,
+    CatalogAddArgs, CatalogArgs, CatalogCommands, CatalogGenerateArgs, CatalogInfoArgs,
+    CatalogInitArgs, CatalogListArgs, CatalogSearchArgs, ContextArgs, GenerateOutput, InitArgs,
+    ManifestFormat, OutputFormat, PullArgs, StatusArgs, SuggestArgs, ValidateArgs,
 };
 use crate::error::{ApsError, Result};
 use crate::git::clone_and_resolve;
@@ -573,6 +573,7 @@ pub fn cmd_catalog(args: CatalogArgs) -> Result<()> {
         CatalogCommands::Info(info_args) => cmd_catalog_info(info_args),
         CatalogCommands::Init(init_args) => cmd_catalog_init(init_args),
         CatalogCommands::Add(add_args) => cmd_catalog_add(add_args),
+        CatalogCommands::Generate(gen_args) => cmd_catalog_generate(gen_args),
     }
 }
 
@@ -923,6 +924,302 @@ fn cmd_catalog_add(args: CatalogAddArgs) -> Result<()> {
     println!("Edit the catalog file to add source, use_cases, triggers, and other metadata.");
 
     Ok(())
+}
+
+/// Generate catalog entries from manifest - outputs prompt for LLM enrichment
+fn cmd_catalog_generate(args: CatalogGenerateArgs) -> Result<()> {
+    // Load manifest
+    let (manifest, manifest_path) = discover_manifest(args.manifest.as_deref())?;
+    let base_dir = manifest_dir(&manifest_path);
+
+    // Filter entries if --only specified
+    let entries: Vec<_> = if args.only.is_empty() {
+        manifest.entries.iter().collect()
+    } else {
+        manifest
+            .entries
+            .iter()
+            .filter(|e| args.only.contains(&e.id))
+            .collect()
+    };
+
+    if entries.is_empty() {
+        println!("No entries to process.");
+        return Ok(());
+    }
+
+    // Collect entry data with content
+    let mut entry_data: Vec<ManifestEntryData> = Vec::new();
+
+    for entry in &entries {
+        let source_path = resolve_source_path(entry, &base_dir);
+        let content = if args.include_content {
+            read_source_content(&source_path, args.max_content_length)
+        } else {
+            None
+        };
+
+        entry_data.push(ManifestEntryData {
+            id: entry.id.clone(),
+            kind: entry.kind.clone(),
+            source: entry.source.clone(),
+            dest: entry.dest.clone(),
+            content,
+            source_path: source_path.to_string_lossy().to_string(),
+        });
+    }
+
+    match args.output {
+        GenerateOutput::Prompt => {
+            output_llm_prompt(&entry_data);
+        }
+        GenerateOutput::Yaml => {
+            output_basic_yaml(&entry_data);
+        }
+        GenerateOutput::Json => {
+            output_basic_json(&entry_data);
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+struct ManifestEntryData {
+    id: String,
+    kind: AssetKind,
+    source: Source,
+    dest: Option<String>,
+    content: Option<String>,
+    source_path: String,
+}
+
+fn resolve_source_path(entry: &crate::manifest::Entry, base_dir: &Path) -> std::path::PathBuf {
+    match &entry.source {
+        Source::Filesystem { root, path, .. } => {
+            let expanded_root = shellexpand::full(root).unwrap_or(std::borrow::Cow::Borrowed(root));
+            let root_path = if Path::new(expanded_root.as_ref()).is_absolute() {
+                std::path::PathBuf::from(expanded_root.as_ref())
+            } else {
+                base_dir.join(expanded_root.as_ref())
+            };
+            match path {
+                Some(p) => root_path.join(p),
+                None => root_path,
+            }
+        }
+        Source::Git { path, .. } => {
+            // For git sources, we can't read content without cloning
+            // Return a placeholder path
+            std::path::PathBuf::from(format!("[git:{}]", path.as_deref().unwrap_or(".")))
+        }
+    }
+}
+
+fn read_source_content(path: &Path, max_length: usize) -> Option<String> {
+    if !path.exists() {
+        return None;
+    }
+
+    let mut content = String::new();
+
+    if path.is_file() {
+        if let Ok(text) = fs::read_to_string(path) {
+            content = text;
+        }
+    } else if path.is_dir() {
+        // Read first few files in directory
+        let mut files_read = 0;
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if files_read >= 3 {
+                    content.push_str("\n... (more files)\n");
+                    break;
+                }
+                let file_path = entry.path();
+                if file_path.is_file() {
+                    if let Some(ext) = file_path.extension() {
+                        if ext == "md" || ext == "txt" || ext == "mdc" {
+                            if let Ok(text) = fs::read_to_string(&file_path) {
+                                content.push_str(&format!(
+                                    "\n--- {} ---\n{}\n",
+                                    file_path.file_name().unwrap_or_default().to_string_lossy(),
+                                    text
+                                ));
+                                files_read += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if content.is_empty() {
+        return None;
+    }
+
+    // Truncate if too long
+    if content.len() > max_length {
+        content.truncate(max_length);
+        content.push_str("\n... [truncated]");
+    }
+
+    Some(content)
+}
+
+fn output_llm_prompt(entries: &[ManifestEntryData]) {
+    println!(
+        r#"# Catalog Generation Task
+
+You are helping generate a catalog of AI coding assistant assets (prompts, rules, skills).
+
+For each manifest entry below, analyze the content and generate rich metadata that will help
+users discover this asset when they describe their task in natural language.
+
+## Output Format
+
+For each entry, output a YAML block with this structure:
+
+```yaml
+- id: <keep the original id>
+  name: <human-readable name, 3-6 words>
+  description: <1-2 sentence description of what this does>
+  kind: <keep original: cursor_rules, agents_md, agent_skill, cursor_skills_root>
+  category: <one of: language, framework, security, testing, documentation, database, api-design, performance, devops, workflow>
+  tags:
+    - <3-5 relevant tags>
+  use_cases:
+    - <2-4 specific scenarios where this helps>
+  triggers:
+    - <3-5 natural language phrases a user might say that should trigger this>
+  keywords:
+    - <5-10 technical terms for search matching>
+  source:
+    <copy from original>
+```
+
+## Guidelines for triggers
+
+Triggers should be natural language phrases a user might say:
+- "review this PR for security"
+- "write tests for this component"
+- "add authentication to my API"
+- "help me with rust borrowing"
+
+## Manifest Entries to Process
+
+"#
+    );
+
+    for entry in entries {
+        println!("### Entry: {}", entry.id);
+        println!("- Kind: {:?}", entry.kind);
+        println!("- Source: {}", entry.source_path);
+        match &entry.source {
+            Source::Git { repo, r#ref, .. } => {
+                println!("- Git: {} @ {}", repo, r#ref);
+            }
+            Source::Filesystem { root, .. } => {
+                println!("- Filesystem: {}", root);
+            }
+        }
+        if let Some(dest) = &entry.dest {
+            println!("- Destination: {}", dest);
+        }
+
+        if let Some(content) = &entry.content {
+            println!("\n**Content:**\n```");
+            println!("{}", content);
+            println!("```\n");
+        } else {
+            println!("\n*Content not available (git source or file not found)*\n");
+        }
+
+        println!("---\n");
+    }
+
+    println!(
+        r#"
+## Your Task
+
+Generate the catalog YAML for all {} entries above. Make sure:
+1. Triggers sound natural (how a developer would ask for help)
+2. Use cases are specific scenarios, not generic descriptions
+3. Keywords include technical terms that would appear in related searches
+4. Categories are consistent across similar assets
+
+Output the complete YAML array that can be added to aps-catalog.yaml.
+"#,
+        entries.len()
+    );
+}
+
+fn output_basic_yaml(entries: &[ManifestEntryData]) {
+    println!("version: \"1.0\"\nassets:");
+    for entry in entries {
+        println!("  - id: {}", entry.id);
+        println!("    name: \"{}\"  # TODO: Add human-readable name", entry.id);
+        println!("    description: \"TODO: Add description\"");
+        println!("    kind: {:?}", entry.kind);
+        println!("    category: uncategorized  # TODO");
+        println!("    tags: []  # TODO");
+        println!("    use_cases: []  # TODO");
+        println!("    triggers: []  # TODO");
+        println!("    keywords: []  # TODO");
+        match &entry.source {
+            Source::Git {
+                repo,
+                r#ref,
+                shallow,
+                path,
+            } => {
+                println!("    source:");
+                println!("      type: git");
+                println!("      repo: {}", repo);
+                println!("      ref: {}", r#ref);
+                println!("      shallow: {}", shallow);
+                if let Some(p) = path {
+                    println!("      path: {}", p);
+                }
+            }
+            Source::Filesystem {
+                root,
+                symlink,
+                path,
+            } => {
+                println!("    source:");
+                println!("      type: filesystem");
+                println!("      root: {}", root);
+                println!("      symlink: {}", symlink);
+                if let Some(p) = path {
+                    println!("      path: {}", p);
+                }
+            }
+        }
+        if let Some(dest) = &entry.dest {
+            println!("    dest: {}", dest);
+        }
+        println!();
+    }
+}
+
+fn output_basic_json(entries: &[ManifestEntryData]) {
+    let output: Vec<_> = entries
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "id": e.id,
+                "kind": format!("{:?}", e.kind),
+                "source_path": e.source_path,
+                "has_content": e.content.is_some(),
+                "content_preview": e.content.as_ref().map(|c| {
+                    if c.len() > 200 { format!("{}...", &c[..200]) } else { c.clone() }
+                }),
+            })
+        })
+        .collect();
+    println!("{}", serde_json::to_string_pretty(&output).unwrap());
 }
 
 // ============================================================================

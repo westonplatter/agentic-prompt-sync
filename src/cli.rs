@@ -155,6 +155,9 @@ pub enum CatalogCommands {
 
     /// Add an asset to the catalog
     Add(CatalogAddArgs),
+
+    /// Generate catalog entries from manifest (outputs prompt for LLM enrichment)
+    Generate(CatalogGenerateArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -244,6 +247,40 @@ pub struct CatalogAddArgs {
     /// Path to the catalog file
     #[arg(long)]
     pub catalog: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogGenerateArgs {
+    /// Path to the manifest file
+    #[arg(long)]
+    pub manifest: Option<PathBuf>,
+
+    /// Only generate for specific entry IDs
+    #[arg(long = "only")]
+    pub only: Vec<String>,
+
+    /// Output format: 'prompt' for LLM input, 'yaml' for direct catalog entries
+    #[arg(long, value_enum, default_value = "prompt")]
+    pub output: GenerateOutput,
+
+    /// Include file contents in output (for LLM analysis)
+    #[arg(long, default_value = "true")]
+    pub include_content: bool,
+
+    /// Maximum content length per file (characters)
+    #[arg(long, default_value = "2000")]
+    pub max_content_length: usize,
+}
+
+#[derive(ValueEnum, Clone, Debug, Default)]
+pub enum GenerateOutput {
+    /// Output a prompt for Claude/LLM to enrich
+    #[default]
+    Prompt,
+    /// Output basic YAML catalog entries
+    Yaml,
+    /// Output JSON for programmatic use
+    Json,
 }
 
 #[derive(ValueEnum, Clone, Debug, Default)]
