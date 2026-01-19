@@ -2,14 +2,30 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      upload_url: ${{ steps.release.outputs.upload_url }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   build:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     strategy:
       matrix:
         include:
@@ -86,12 +102,11 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.*
 
-  release:
-    needs: build
+  upload-assets:
+    needs: [release-please, build]
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -103,11 +118,11 @@ jobs:
           find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} . \;
           sha256sum *.tar.gz *.zip > checksums.txt
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/*.tar.gz
-            artifacts/*.zip
-            artifacts/checksums.txt
-          generate_release_notes: true
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd artifacts
+          for file in *.tar.gz *.zip checksums.txt; do
+            gh release upload "${{ needs.release-please.outputs.tag_name }}" "$file" --repo "${{ github.repository }}"
+          done
