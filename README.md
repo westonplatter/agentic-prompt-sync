@@ -46,7 +46,7 @@ entries:
     kind: agents_md
     source:
       type: filesystem
-      root: $HOME
+      root: /Users/my-username
       path: personal-generic-AGENTS.md
     dest: ./AGENTS.md
 ```
@@ -93,7 +93,7 @@ entries:
     kind: agents_md
     source:
       type: filesystem
-      root: $HOME
+      root: /Users/my-username
       path: AGENTS-generic.md
     dest: AGENTS.md
 
@@ -110,7 +110,7 @@ entries:
     kind: cursor_rules
     source:
       type: filesystem
-      root: $HOME/work/acme-corp/internal-prompts
+      root: /Users/my-username/work/acme-corp/internal-prompts
       path: rules
     dest: ./.cursor/rules/
 
@@ -118,7 +118,7 @@ entries:
     kind: cursor_rules
     source:
       type: filesystem
-      root: $HOME/work/acme-corp/internal-prompts
+      root: /Users/my-username/work/acme-corp/internal-prompts
       path: dumping-ground
     dest: ./.cursor/rules/
 
