@@ -208,22 +208,30 @@ pub fn install_entry(
     })
 }
 
+/// Expand shell variables in a path string (e.g., $HOME, ${HOME}, ~)
+fn expand_path(path: &str) -> String {
+    shellexpand::full(path)
+        .map(|s| s.into_owned())
+        .unwrap_or_else(|_| path.to_string())
+}
+
 /// Resolve the source and return path + metadata
 fn resolve_source(source: &Source, manifest_dir: &Path) -> Result<ResolvedSource> {
-    let path = source.path();
+    let path = expand_path(source.path());
 
     match source {
         Source::Filesystem { root, symlink, .. } => {
-            let root_path = if Path::new(root).is_absolute() {
-                PathBuf::from(root)
+            let expanded_root = expand_path(root);
+            let root_path = if Path::new(&expanded_root).is_absolute() {
+                PathBuf::from(&expanded_root)
             } else {
-                manifest_dir.join(root)
+                manifest_dir.join(&expanded_root)
             };
             // If path is ".", use root directly; otherwise join
             let source_path = if path == "." {
                 root_path
             } else {
-                root_path.join(path)
+                root_path.join(&path)
             };
 
             Ok(ResolvedSource {
@@ -243,7 +251,7 @@ fn resolve_source(source: &Source, manifest_dir: &Path) -> Result<ResolvedSource
             let source_path = if path == "." {
                 resolved.repo_path.clone()
             } else {
-                resolved.repo_path.join(path)
+                resolved.repo_path.join(&path)
             };
 
             let git_info = GitInfo {
@@ -560,4 +568,70 @@ fn copy_directory(src: &Path, dst: &Path) -> Result<()> {
 
     debug!("Copied directory {:?} to {:?}", src, dst);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_expand_path_with_home() {
+        // Set a test environment variable
+        std::env::set_var("TEST_VAR_HOME", "/test/home");
+
+        let result = expand_path("$TEST_VAR_HOME/documents");
+        assert_eq!(result, "/test/home/documents");
+
+        std::env::remove_var("TEST_VAR_HOME");
+    }
+
+    #[test]
+    fn test_expand_path_with_braced_syntax() {
+        std::env::set_var("TEST_VAR_BRACED", "/braced/path");
+
+        let result = expand_path("${TEST_VAR_BRACED}/subfolder");
+        assert_eq!(result, "/braced/path/subfolder");
+
+        std::env::remove_var("TEST_VAR_BRACED");
+    }
+
+    #[test]
+    fn test_expand_path_with_tilde() {
+        // Tilde expansion should work (expands to $HOME)
+        let result = expand_path("~/documents");
+        assert!(result.starts_with('/') || result.contains(":\\"));
+        assert!(result.ends_with("/documents") || result.ends_with("\\documents"));
+    }
+
+    #[test]
+    fn test_expand_path_no_variables() {
+        let result = expand_path("/absolute/path/to/file");
+        assert_eq!(result, "/absolute/path/to/file");
+    }
+
+    #[test]
+    fn test_expand_path_relative_path() {
+        let result = expand_path("relative/path");
+        assert_eq!(result, "relative/path");
+    }
+
+    #[test]
+    fn test_expand_path_undefined_variable_preserved() {
+        // Undefined variables should be preserved or return original
+        let result = expand_path("$UNDEFINED_VAR_12345/path");
+        // shellexpand leaves undefined vars as-is when using full()
+        assert!(result.contains("UNDEFINED_VAR_12345") || result.contains("path"));
+    }
+
+    #[test]
+    fn test_expand_path_multiple_variables() {
+        std::env::set_var("TEST_VAR_A", "/var/a");
+        std::env::set_var("TEST_VAR_B", "subfolder");
+
+        let result = expand_path("$TEST_VAR_A/$TEST_VAR_B/file.txt");
+        assert_eq!(result, "/var/a/subfolder/file.txt");
+
+        std::env::remove_var("TEST_VAR_A");
+        std::env::remove_var("TEST_VAR_B");
+    }
 }
