@@ -50,6 +50,9 @@ pub struct CatalogEntry {
     /// Human-readable name of the asset
     pub name: String,
 
+    /// The kind of asset
+    pub kind: AssetKind,
+
     /// Destination path where this asset will be installed
     pub destination: String,
 
@@ -150,6 +153,7 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
             catalog_entries.push(CatalogEntry {
                 id: format!("{}:{}", entry.id, name),
                 name,
+                kind: AssetKind::AgentsMd,
                 destination: format!("./{}", base_dest.display()),
                 short_description,
             });
@@ -173,6 +177,7 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
                 catalog_entries.push(CatalogEntry {
                     id: format!("{}:{}", entry.id, name),
                     name,
+                    kind: AssetKind::CursorRules,
                     destination: format!("./{}", dest_path.display()),
                     short_description,
                 });
@@ -197,6 +202,7 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
                 catalog_entries.push(CatalogEntry {
                     id: format!("{}:{}", entry.id, name),
                     name,
+                    kind: AssetKind::CursorSkillsRoot,
                     destination: format!("./{}", dest_path.display()),
                     short_description,
                 });
@@ -221,6 +227,7 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
                 catalog_entries.push(CatalogEntry {
                     id: format!("{}:{}", entry.id, name),
                     name,
+                    kind: AssetKind::AgentSkill,
                     destination: format!("./{}", dest_path.display()),
                     short_description,
                 });
