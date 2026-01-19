@@ -89,13 +89,50 @@ aps status
 
 ```yaml
 entries:
-  - id: unique-identifier      # Required: unique ID for this entry
-    kind: agents_md            # Asset type: agents_md, cursor_rules, cursor_skills_root, agent_skill
+  - id: my-agents
+    kind: agents_md
     source:
-      type: filesystem         # Source type: filesystem or git
-      root: ../shared-assets   # Root path for the source
-      path: AGENTS.md          # Path within the source
-    dest: ./AGENTS.md          # Optional: destination override
+      type: filesystem
+      root: $HOME
+      path: AGENTS-generic.md
+    dest: AGENTS.md
+
+  - id: personal-rules
+    kind: cursor_rules
+    source:
+      type: git
+      repo: git@github.com:your-username/dotfiles.git
+      ref: main
+      path: .cursor/rules
+    dest: ./.cursor/rules/
+
+  - id: company-rules
+    kind: cursor_rules
+    source:
+      type: filesystem
+      root: $HOME/work/acme-corp/internal-prompts
+      path: rules
+    dest: ./.cursor/rules/
+
+  - id: rules-in-formation
+    kind: cursor_rules
+    source:
+      type: filesystem
+      root: $HOME/work/acme-corp/internal-prompts
+      path: dumping-ground
+    dest: ./.cursor/rules/
+
+  - id: anthropic-skills
+    kind: agent_skill
+    source:
+      type: git
+      repo: git@github.com:anthropics/skills.git
+      ref: main
+      path: skills
+    include:
+      - pdf
+      - skill-creation
+    dest: ./.claude/skills/
 ```
 
 ### Asset Types
