@@ -9,24 +9,50 @@ A manifest-driven CLI tool for safely syncing agentic assets (Cursor rules, Curs
 - **Deterministic lockfile** - Idempotent pulls that only update when needed
 - **Scriptable CLI** - Optional interactivity for CI/CD pipelines
 
-## Getting Started
+## Installation
 
-### Prerequisites
+### Quick Install (macOS/Linux)
 
-- Rust toolchain (1.70+)
-- Cargo package manager
+```bash
+curl -fsSL https://raw.githubusercontent.com/westonplatter/agentic-prompt-sync/main/install.sh | sh
+```
 
-### Installation
+This downloads the latest release and installs to `~/.local/bin`. Set `APS_INSTALL_DIR` to customize:
 
-Clone the repository and build:
+```bash
+APS_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/westonplatter/agentic-prompt-sync/main/install.sh | sh
+```
+
+### Download Binary
+
+Pre-built binaries for all platforms are available on the [Releases page](https://github.com/westonplatter/agentic-prompt-sync/releases).
+
+| Platform     | Download |
+|--------------|----------|
+| Linux x64    | `aps-linux-x64-musl.tar.gz` |
+| Linux ARM64  | `aps-linux-arm64.tar.gz` |
+| macOS Intel  | `aps-macos-x64.tar.gz` |
+| macOS ARM    | `aps-macos-arm64.tar.gz` |
+| Windows x64  | `aps-windows-x64.zip` |
+
+### Cargo Install
+
+If you have Rust installed:
+
+```bash
+cargo install aps
+```
+
+### Build from Source
 
 ```bash
 git clone https://github.com/westonplatter/agentic-prompt-sync.git
 cd agentic-prompt-sync
 cargo build --release
+# Binary at target/release/aps
 ```
 
-The binary will be available at `target/release/aps`.
+## Getting Started
 
 ### Quick Start
 
