@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/westonplatter/agentic-prompt-sync/compare/aps-v0.1.1...aps-v0.1.2) (2026-01-19)
+
+
+### Features
+
+* ask user to approve deleting orphaned files ([#25](https://github.com/westonplatter/agentic-prompt-sync/issues/25)) ([fe5ad51](https://github.com/westonplatter/agentic-prompt-sync/commit/fe5ad51664997e7993c99e901089b77840194dbd))
+
 ## [0.1.1](https://github.com/westonplatter/agentic-prompt-sync/compare/aps-v0.1.0...aps-v0.1.1) (2026-01-19)
 
 
