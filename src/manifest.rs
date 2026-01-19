@@ -159,8 +159,8 @@ fn default_symlink() -> bool {
 }
 
 impl Source {
-    /// Convert this Source into a SourceAdapter implementation
-    pub fn into_adapter(&self) -> Box<dyn SourceAdapter> {
+    /// Convert this Source to a SourceAdapter implementation
+    pub fn to_adapter(&self) -> Box<dyn SourceAdapter> {
         match self {
             Source::Git {
                 repo,

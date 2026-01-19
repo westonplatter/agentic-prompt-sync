@@ -222,7 +222,7 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
 
     println!("\nValidating entries:");
     for entry in &manifest.entries {
-        let adapter = entry.source.into_adapter();
+        let adapter = entry.source.to_adapter();
         let source_type = adapter.source_type();
         let display_name = adapter.display_name();
 

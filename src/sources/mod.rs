@@ -303,10 +303,7 @@ mod tests {
             true,
             None,
         );
-        assert_eq!(
-            source.display_name(),
-            "https://github.com/example/repo.git"
-        );
+        assert_eq!(source.display_name(), "https://github.com/example/repo.git");
     }
 
     #[test]
@@ -385,11 +382,8 @@ mod tests {
             temp_holder,
         );
 
-        let locked = resolved.to_locked_entry(
-            Path::new("/dest/path"),
-            "checksum789".to_string(),
-            vec![],
-        );
+        let locked =
+            resolved.to_locked_entry(Path::new("/dest/path"), "checksum789".to_string(), vec![]);
 
         assert_eq!(locked.source, "https://github.com/example/repo.git");
         assert_eq!(locked.dest, "/dest/path");

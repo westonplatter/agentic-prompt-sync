@@ -46,7 +46,7 @@ pub fn install_entry(
     info!("Processing entry: {}", entry.id);
 
     // Convert source to adapter and resolve
-    let adapter = entry.source.into_adapter();
+    let adapter = entry.source.to_adapter();
     let resolved = adapter.resolve(manifest_dir)?;
     debug!("Source path: {:?}", resolved.source_path);
 
@@ -549,4 +549,3 @@ fn copy_directory(src: &Path, dst: &Path) -> Result<()> {
     debug!("Copied directory {:?} to {:?}", src, dst);
     Ok(())
 }
-

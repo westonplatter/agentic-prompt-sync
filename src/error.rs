@@ -1,3 +1,9 @@
+//! Error types for APS.
+//!
+//! Note: The `unused_assignments` allow is needed because thiserror's derive
+//! macro generates code that triggers false positives from clippy.
+#![allow(unused_assignments)]
+
 use miette::Diagnostic;
 use std::path::PathBuf;
 use thiserror::Error;
