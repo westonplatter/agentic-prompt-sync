@@ -1,5 +1,7 @@
 use crate::catalog::Catalog;
-use crate::cli::{CatalogGenerateArgs, InitArgs, ManifestFormat, PullArgs, StatusArgs, ValidateArgs};
+use crate::cli::{
+    CatalogGenerateArgs, InitArgs, ManifestFormat, PullArgs, StatusArgs, ValidateArgs,
+};
 use crate::error::{ApsError, Result};
 use crate::install::{install_entry, InstallOptions, InstallResult};
 use crate::lockfile::{display_status, Lockfile};
