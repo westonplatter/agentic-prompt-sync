@@ -87,7 +87,53 @@ aps status
 
 ### Manifest File (`aps.yaml`)
 
-See [Examples](#examples) below for full manifest configurations.
+```yaml
+entries:
+  - id: my-agents
+    kind: agents_md
+    source:
+      type: filesystem
+      root: /Users/my-username
+      path: AGENTS-generic.md
+    dest: AGENTS.md
+
+  - id: personal-rules
+    kind: cursor_rules
+    source:
+      type: git
+      repo: git@github.com:your-username/dotfiles.git
+      ref: main
+      path: .cursor/rules
+    dest: ./.cursor/rules/
+
+  - id: company-rules
+    kind: cursor_rules
+    source:
+      type: filesystem
+      root: /Users/my-username/work/acme-corp/internal-prompts
+      path: rules
+    dest: ./.cursor/rules/
+
+  - id: rules-in-formation
+    kind: cursor_rules
+    source:
+      type: filesystem
+      root: /Users/my-username/work/acme-corp/internal-prompts
+      path: dumping-ground
+    dest: ./.cursor/rules/
+
+  - id: anthropic-skills
+    kind: agent_skill
+    source:
+      type: git
+      repo: git@github.com:anthropics/skills.git
+      ref: main
+      path: skills
+    include:
+      - pdf
+      - skill-creation
+    dest: ./.claude/skills/
+```
 
 ### Asset Types
 
@@ -115,54 +161,6 @@ The lockfile tracks installed assets and is automatically created/updated by `ap
 - Content checksum (SHA256)
 
 ## Examples
-
-### Sync AGENTS.md from a local directory
-
-```yaml
-entries:
-  - id: team-agents
-    kind: agents_md
-    source:
-      type: filesystem
-      root: /Users/my-username/shared-prompts
-      path: AGENTS.md
-```
-
-### Sync Cursor rules from another project
-
-```yaml
-entries:
-  - id: company-rules
-    kind: cursor_rules
-    source:
-      type: filesystem
-      root: ../company-standards
-      path: cursor-rules
-    dest: ./.cursor/rules/
-```
-
-### Sync Claude agent skills from the Anthropic skills repository
-
-```yaml
-entries:
-  - id: pdf-skill
-    kind: agent_skill
-    source:
-      type: git
-      repo: git@github.com:anthropics/skills.git
-      ref: main
-      path: skills/pdf
-    dest: ./.claude/skills/pdf/
-
-  - id: memory-skill
-    kind: agent_skill
-    source:
-      type: git
-      repo: git@github.com:anthropics/skills.git
-      ref: main
-      path: skills/memory
-    dest: ./.claude/skills/memory/
-```
 
 ### Non-interactive pull for CI/CD
 
