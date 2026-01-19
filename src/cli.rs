@@ -7,7 +7,8 @@ use std::path::PathBuf;
     version,
     about = "Manifest-driven CLI for syncing agentic assets",
     long_about = "APS (Agentic Prompt Sync) syncs Cursor rules, Cursor skills, and AGENTS.md files \
-                  from git or filesystem sources into your repository in a safe, repeatable way."
+                  from git or filesystem sources into your repository in a safe, repeatable way.\n\n\
+                  Use `aps suggest` to intelligently find relevant assets based on your task description."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -31,6 +32,12 @@ pub enum Commands {
 
     /// Display status from lockfile
     Status(StatusArgs),
+
+    /// Suggest relevant assets based on a task description (agentic discovery)
+    Suggest(SuggestArgs),
+
+    /// Manage the asset catalog
+    Catalog(CatalogArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -94,4 +101,152 @@ pub struct StatusArgs {
     /// Path to the manifest file
     #[arg(long)]
     pub manifest: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct SuggestArgs {
+    /// Description of the task or work you're doing
+    #[arg(required = true)]
+    pub description: Vec<String>,
+
+    /// Path to the catalog file
+    #[arg(long)]
+    pub catalog: Option<PathBuf>,
+
+    /// Maximum number of suggestions to show
+    #[arg(long, short = 'n', default_value = "5")]
+    pub limit: usize,
+
+    /// Show detailed information for each suggestion
+    #[arg(long, short = 'd')]
+    pub detailed: bool,
+
+    /// Output format
+    #[arg(long, value_enum, default_value = "pretty")]
+    pub format: OutputFormat,
+
+    /// Automatically add the top suggestion to your manifest
+    #[arg(long)]
+    pub add_to_manifest: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogArgs {
+    #[command(subcommand)]
+    pub command: CatalogCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum CatalogCommands {
+    /// List all assets in the catalog
+    List(CatalogListArgs),
+
+    /// Search the catalog
+    Search(CatalogSearchArgs),
+
+    /// Show detailed information about an asset
+    Info(CatalogInfoArgs),
+
+    /// Initialize a new catalog file
+    Init(CatalogInitArgs),
+
+    /// Add an asset to the catalog
+    Add(CatalogAddArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogListArgs {
+    /// Path to the catalog file
+    #[arg(long)]
+    pub catalog: Option<PathBuf>,
+
+    /// Filter by category
+    #[arg(long, short = 'c')]
+    pub category: Option<String>,
+
+    /// Filter by tag
+    #[arg(long, short = 't')]
+    pub tag: Option<String>,
+
+    /// Output format
+    #[arg(long, value_enum, default_value = "pretty")]
+    pub format: OutputFormat,
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogSearchArgs {
+    /// Search query
+    #[arg(required = true)]
+    pub query: Vec<String>,
+
+    /// Path to the catalog file
+    #[arg(long)]
+    pub catalog: Option<PathBuf>,
+
+    /// Maximum number of results
+    #[arg(long, short = 'n', default_value = "10")]
+    pub limit: usize,
+
+    /// Output format
+    #[arg(long, value_enum, default_value = "pretty")]
+    pub format: OutputFormat,
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogInfoArgs {
+    /// Asset ID to show information for
+    pub id: String,
+
+    /// Path to the catalog file
+    #[arg(long)]
+    pub catalog: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogInitArgs {
+    /// Path for the catalog file
+    #[arg(long, default_value = "aps-catalog.yaml")]
+    pub path: PathBuf,
+
+    /// Include example assets in the new catalog
+    #[arg(long)]
+    pub with_examples: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogAddArgs {
+    /// Asset ID
+    pub id: String,
+
+    /// Asset name
+    #[arg(long)]
+    pub name: String,
+
+    /// Asset description
+    #[arg(long)]
+    pub description: String,
+
+    /// Asset kind (cursor_rules, cursor_skills_root, agents_md, agent_skill)
+    #[arg(long)]
+    pub kind: String,
+
+    /// Category
+    #[arg(long)]
+    pub category: Option<String>,
+
+    /// Tags (comma-separated)
+    #[arg(long)]
+    pub tags: Option<String>,
+
+    /// Path to the catalog file
+    #[arg(long)]
+    pub catalog: Option<PathBuf>,
+}
+
+#[derive(ValueEnum, Clone, Debug, Default)]
+pub enum OutputFormat {
+    #[default]
+    Pretty,
+    Json,
+    Yaml,
 }

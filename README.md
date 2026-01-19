@@ -4,10 +4,40 @@ A manifest-driven CLI tool for safely syncing agentic assets (Cursor rules, Curs
 
 ## Features
 
+- **Intelligent Asset Discovery** - Describe what you're working on and get suggestions for relevant prompts, skills, and rules
 - **Declarative manifest-driven sync** - Define your assets in a YAML manifest
 - **Safe installs** - Automatic conflict detection and backup creation
 - **Deterministic lockfile** - Idempotent pulls that only update when needed
 - **Scriptable CLI** - Optional interactivity for CI/CD pipelines
+
+## What Makes It "Agentic"?
+
+Unlike simple file syncers, APS includes **intelligent asset discovery** that analyzes what you're working on and recommends relevant prompts, skills, and rules from a curated catalog. This is genuinely agentic behavior - the tool makes context-aware decisions about which assets are relevant to your current task.
+
+```bash
+# Describe your task, get intelligent suggestions
+aps suggest "I need to review a pull request for security vulnerabilities"
+
+# Output:
+# 🔍 Analyzing task: "I need to review a pull request for security vulnerabilities"
+#
+# Found 3 relevant asset(s) for your task:
+#
+#   1. Security-Focused Code Review [100%]
+#      ID: code-review-security
+#      Category: security | Kind: CursorRules
+#      Why: Matched: tagged with 'security' and 2 more
+#
+#   2. Performance Review Guidelines [67%]
+#      ID: code-review-performance
+#      ...
+```
+
+The suggestion system uses **TF-IDF-style scoring** with field weighting to find the most relevant assets based on:
+- Trigger phrases (user intent patterns)
+- Tags and keywords
+- Use cases and descriptions
+- Category matching
 
 ## Getting Started
 
@@ -65,12 +95,14 @@ aps status
 
 ## Commands
 
-| Command        | Description                                       |
-| -------------- | ------------------------------------------------- |
-| `aps init`     | Create a new manifest file and update .gitignore  |
-| `aps pull`     | Pull all entries from manifest and install assets |
-| `aps validate` | Validate manifest schema and check sources        |
-| `aps status`   | Display last pull information from lockfile       |
+| Command        | Description                                           |
+| -------------- | ----------------------------------------------------- |
+| `aps init`     | Create a new manifest file and update .gitignore      |
+| `aps pull`     | Pull all entries from manifest and install assets     |
+| `aps validate` | Validate manifest schema and check sources            |
+| `aps status`   | Display last pull information from lockfile           |
+| `aps suggest`  | **Intelligently suggest assets based on your task**   |
+| `aps catalog`  | Manage and browse the asset catalog                   |
 
 ### Common Options
 
@@ -82,6 +114,24 @@ aps status
 - `--yes` - Non-interactive mode, automatically confirm overwrites
 - `--dry-run` - Preview changes without applying them
 - `--only <id>` - Only pull specific entry by ID
+
+### Suggest Options
+
+- `--limit <n>` - Maximum number of suggestions (default: 5)
+- `--detailed` - Show full descriptions and use cases
+- `--format <format>` - Output format: `pretty`, `json`, or `yaml`
+- `--add-to-manifest` - Automatically add top suggestion to manifest
+- `--catalog <path>` - Path to catalog file
+
+### Catalog Subcommands
+
+| Subcommand          | Description                              |
+| ------------------- | ---------------------------------------- |
+| `aps catalog list`  | List all assets in the catalog           |
+| `aps catalog search`| Search for assets by keyword             |
+| `aps catalog info`  | Show detailed information about an asset |
+| `aps catalog init`  | Initialize a new catalog file            |
+| `aps catalog add`   | Add a new asset to the catalog           |
 
 ## Configuration
 
@@ -162,7 +212,86 @@ The lockfile tracks installed assets and is automatically created/updated by `ap
 - Last update timestamp
 - Content checksum (SHA256)
 
+### Catalog File (`aps-catalog.yaml`)
+
+The catalog is a curated index of available assets with rich metadata for intelligent discovery:
+
+```yaml
+version: "1.0"
+assets:
+  - id: code-review-security
+    name: Security-Focused Code Review
+    description: >-
+      Comprehensive security review checklist covering OWASP Top 10,
+      authentication patterns, and common vulnerabilities.
+    kind: cursor_rules
+    category: security
+    tags:
+      - security
+      - code-review
+      - owasp
+    use_cases:
+      - Reviewing PRs for security issues
+      - Auditing authentication code
+    keywords:
+      - XSS
+      - SQL injection
+      - authentication
+    triggers:
+      - review this PR for security
+      - check for vulnerabilities
+    source:
+      type: git
+      repo: https://github.com/example/security-rules.git
+      ref: main
+      path: rules/security-review
+    author: Security Team
+    version: "2.1.0"
+```
+
+The catalog fields enable intelligent matching:
+- **triggers**: User intent patterns that suggest this asset
+- **use_cases**: Specific scenarios where this asset helps
+- **keywords**: Technical terms for precise matching
+- **tags**: Broad categories for filtering
+- **description**: Full text search fallback
+
 ## Examples
+
+### Intelligent Asset Discovery
+
+```bash
+# Get suggestions for your current task
+aps suggest "I need to write tests for a React component"
+
+# Get detailed suggestions with use cases
+aps suggest --detailed "reviewing a Go microservice for performance"
+
+# Automatically add the best match to your manifest
+aps suggest --add-to-manifest "security audit for authentication"
+
+# Output as JSON for scripting
+aps suggest --format json "data science with pandas"
+```
+
+### Catalog Management
+
+```bash
+# Initialize a new catalog with examples
+aps catalog init --with-examples
+
+# Browse all available assets
+aps catalog list
+
+# Filter by category
+aps catalog list --category security
+
+# Search the catalog
+aps catalog search "code review"
+
+# Get detailed info about an asset
+aps catalog info code-review-security
+```
 
 ### Non-interactive pull for CI/CD
 
