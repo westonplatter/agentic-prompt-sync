@@ -1,6 +1,6 @@
 # Agentic Prompt Sync (APS)
 
-A manifest-driven CLI tool for safely syncing agentic assets (Cursor rules, Cursor skills, and AGENTS.md files) from git or filesystem sources into your repository.
+A manifest-driven CLI tool for safely syncing agentic assets (Cursor rules, Cursor skills, Claude agent skills, and AGENTS.md files) from git or filesystem sources into your repository.
 
 ## Features
 
@@ -46,8 +46,8 @@ entries:
     kind: agents_md
     source:
       type: filesystem
-      root: ../shared-assets
-    path: AGENTS.md
+      root: /Users/my-username
+      path: personal-generic-AGENTS.md
     dest: ./AGENTS.md
 ```
 
@@ -89,13 +89,50 @@ aps status
 
 ```yaml
 entries:
-  - id: unique-identifier      # Required: unique ID for this entry
-    kind: agents_md            # Asset type: agents_md, cursor_rules, cursor_skills_root
+  - id: my-agents
+    kind: agents_md
     source:
-      type: filesystem         # Source type: filesystem or git
-      root: ../shared-assets   # Root path for the source
-    path: AGENTS.md            # Path within the source
-    dest: ./AGENTS.md          # Optional: destination override
+      type: filesystem
+      root: /Users/my-username
+      path: AGENTS-generic.md
+    dest: AGENTS.md
+
+  - id: personal-rules
+    kind: cursor_rules
+    source:
+      type: git
+      repo: git@github.com:your-username/dotfiles.git
+      ref: main
+      path: .cursor/rules
+    dest: ./.cursor/rules/
+
+  - id: company-rules
+    kind: cursor_rules
+    source:
+      type: filesystem
+      root: /Users/my-username/work/acme-corp/internal-prompts
+      path: rules
+    dest: ./.cursor/rules/
+
+  - id: rules-in-formation
+    kind: cursor_rules
+    source:
+      type: filesystem
+      root: /Users/my-username/work/acme-corp/internal-prompts
+      path: dumping-ground
+    dest: ./.cursor/rules/
+
+  - id: anthropic-skills
+    kind: agent_skill
+    source:
+      type: git
+      repo: git@github.com:anthropics/skills.git
+      ref: main
+      path: skills
+    include:
+      - pdf
+      - skill-creation
+    dest: ./.claude/skills/
 ```
 
 ### Asset Types
@@ -105,6 +142,14 @@ entries:
 | `agents_md` | Single AGENTS.md file | `./AGENTS.md` |
 | `cursor_rules` | Directory of Cursor rules | `./.cursor/rules/` |
 | `cursor_skills_root` | Directory with skill subdirs | `./.cursor/skills/` |
+| `agent_skill` | Claude agent skill directory | `./.claude/skills/` |
+
+### Source Types
+
+| Type | Description | Key Properties |
+|------|-------------|----------------|
+| `filesystem` | Pull from a local directory | `root`, `path`, `symlink` |
+| `git` | Pull from a git repository | `repo`, `ref`, `path`, `shallow` |
 
 ### Lockfile (`.aps.lock`)
 
@@ -116,31 +161,6 @@ The lockfile tracks installed assets and is automatically created/updated by `ap
 - Content checksum (SHA256)
 
 ## Examples
-
-### Sync AGENTS.md from a local directory
-
-```yaml
-entries:
-  - id: team-agents
-    kind: agents_md
-    source:
-      type: filesystem
-      root: ~/shared-prompts
-    path: AGENTS.md
-```
-
-### Sync Cursor rules from another project
-
-```yaml
-entries:
-  - id: company-rules
-    kind: cursor_rules
-    source:
-      type: filesystem
-      root: ../company-standards
-    path: cursor-rules
-    dest: ./.cursor/rules/
-```
 
 ### Non-interactive pull for CI/CD
 
