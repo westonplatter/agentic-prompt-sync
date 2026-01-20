@@ -166,6 +166,15 @@ impl Lockfile {
             .map(|e| e.checksum == checksum)
             .unwrap_or(false)
     }
+
+    /// Check if a git commit SHA matches the locked entry
+    pub fn commit_matches(&self, id: &str, commit_sha: &str) -> bool {
+        self.entries
+            .get(id)
+            .and_then(|e| e.commit.as_ref())
+            .map(|c| c == commit_sha)
+            .unwrap_or(false)
+    }
 }
 
 /// Display status information from the lockfile

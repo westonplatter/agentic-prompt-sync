@@ -3,6 +3,7 @@ use crate::checksum::compute_source_checksum;
 use crate::error::{ApsError, Result};
 use crate::lockfile::{LockedEntry, Lockfile};
 use crate::manifest::{AssetKind, Entry};
+use crate::sources::get_remote_commit_sha;
 use dialoguer::Confirm;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -44,6 +45,37 @@ pub fn install_entry(
     options: &InstallOptions,
 ) -> Result<InstallResult> {
     info!("Processing entry: {}", entry.id);
+
+    // For git sources, check if remote commit matches lockfile before cloning
+    // This is much faster than cloning and comparing checksums
+    if let Some((repo, git_ref)) = entry.source.git_info() {
+        let dest_path = manifest_dir.join(entry.destination());
+
+        // Only skip if destination exists - if it doesn't, we need to install
+        if dest_path.exists() {
+            debug!("Checking remote commit for {} ({})", repo, git_ref);
+            if let Ok(Some(remote_sha)) = get_remote_commit_sha(repo, git_ref) {
+                if lockfile.commit_matches(&entry.id, &remote_sha) {
+                    info!(
+                        "Entry {} is up to date (commit {} unchanged)",
+                        entry.id,
+                        &remote_sha[..8.min(remote_sha.len())]
+                    );
+                    return Ok(InstallResult {
+                        id: entry.id.clone(),
+                        installed: false,
+                        skipped_no_change: true,
+                        locked_entry: None,
+                        warnings: Vec::new(),
+                    });
+                }
+                debug!(
+                    "Remote commit {} differs from lockfile, will clone",
+                    &remote_sha[..8.min(remote_sha.len())]
+                );
+            }
+        }
+    }
 
     // Convert source to adapter and resolve
     let adapter = entry.source.to_adapter();
