@@ -1,12 +1,14 @@
-# Agentic Prompt Sync (APS)
+# Agentic Prompt Sync (aps)
 
-A manifest-driven CLI tool for safely syncing agentic assets (Cursor rules, Cursor skills, Claude agent skills, and AGENTS.md files) from git or filesystem sources into your repository.
+Use `aps` to combose and sync your own custom collection of agentic prompts/skills/etc. 
 
 ![Example of running ap sync](./docs/aps-example.png)
 
 ## Features
 
-- **Declarative manifest-driven sync** - Define your assets in a YAML manifest
+`aps` is a manifest-driven, CLI tool for syncing agentic assets (Cursor rules, Agent Skills, and AGENTS.md files) from sources like git or your filesystem in your project folders.
+
+- **Declarative manifest-driven sync** - Define your agentic assets in a YAML manifest
 - **Safe installs** - Automatic conflict detection and backup creation
 - **Deterministic lockfile** - Idempotent syncs that only update when needed
 - **Scriptable CLI** - Optional interactivity for CI/CD pipelines
