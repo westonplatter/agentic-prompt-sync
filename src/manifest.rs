@@ -180,6 +180,14 @@ impl Source {
             } => Box::new(FilesystemSource::new(root.clone(), *symlink, path.clone())),
         }
     }
+
+    /// Get git source info (repo URL and ref) if this is a git source
+    pub fn git_info(&self) -> Option<(&str, &str)> {
+        match self {
+            Source::Git { repo, r#ref, .. } => Some((repo.as_str(), r#ref.as_str())),
+            Source::Filesystem { .. } => None,
+        }
+    }
 }
 
 /// Discover and load a manifest

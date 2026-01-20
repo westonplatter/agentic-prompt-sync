@@ -203,3 +203,48 @@ fn get_head_commit(repo_path: &Path) -> Result<String> {
     let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(sha)
 }
+
+/// Get the commit SHA for a ref from a remote repository without cloning.
+/// Uses `git ls-remote` which is much faster than a full clone.
+pub fn get_remote_commit_sha(url: &str, git_ref: &str) -> Result<Option<String>> {
+    // For "auto" ref, try main then master
+    let refs_to_try = if git_ref == "auto" {
+        vec!["main", "master"]
+    } else {
+        vec![git_ref]
+    };
+
+    for ref_name in refs_to_try {
+        debug!("Checking remote ref '{}' for {}", ref_name, url);
+
+        let output = Command::new("git")
+            .arg("ls-remote")
+            .arg("--refs")
+            .arg(url)
+            .arg(format!("refs/heads/{}", ref_name))
+            .output()
+            .map_err(|e| ApsError::GitError {
+                message: format!("Failed to execute git ls-remote: {}", e),
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            debug!("git ls-remote failed for ref '{}': {}", ref_name, stderr);
+            continue;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Output format: "<sha>\trefs/heads/<branch>"
+        if let Some(line) = stdout.lines().next() {
+            if let Some(sha) = line.split_whitespace().next() {
+                if !sha.is_empty() {
+                    debug!("Found remote commit {} for ref '{}'", sha, ref_name);
+                    return Ok(Some(sha.to_string()));
+                }
+            }
+        }
+    }
+
+    // No matching ref found
+    Ok(None)
+}

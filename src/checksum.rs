@@ -14,9 +14,14 @@ pub fn compute_checksum(path: &Path) -> Result<String> {
         hasher.update(&content);
     } else if path.is_dir() {
         // Collect all file paths relative to the directory, sorted for determinism
+        // Exclude .git directories since their contents vary between clones
         let mut files: Vec<_> = WalkDir::new(path)
             .into_iter()
             .filter_map(|e| e.ok())
+            .filter(|e| {
+                // Exclude .git directories
+                !e.path().components().any(|c| c.as_os_str() == ".git")
+            })
             .filter(|e| e.file_type().is_file())
             .map(|e| e.path().to_path_buf())
             .collect();

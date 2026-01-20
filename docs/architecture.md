@@ -79,6 +79,7 @@ The `_temp_holder` field is critical for git sources - it keeps the cloned tempo
 ### Concrete Adapters
 
 **FilesystemSource** (`src/sources/filesystem.rs`)
+
 - Resolves local filesystem paths
 - Supports shell variable expansion (`$HOME`, `$USER`, `~`)
 - Configurable symlink vs. copy behavior
@@ -93,11 +94,13 @@ pub struct FilesystemSource {
 ```
 
 **GitSource** (`src/sources/git.rs`)
+
 - Clones repositories to temporary directories
 - Supports branch/tag resolution with fallback ("auto" tries main→master)
 - Shallow clone optimization
 - Stores commit SHA and resolved ref in lockfile
 - Always copies (never symlinks) due to temp directory
+- **Commit-based change detection**: Uses `git ls-remote` to check the remote commit SHA _before_ cloning. If the commit matches the lockfile and the destination exists, the clone is skipped entirely. This is much faster than cloning and comparing content.
 
 ```rust
 pub struct GitSource {
@@ -106,6 +109,15 @@ pub struct GitSource {
     pub shallow: bool,          // Shallow clone?
     pub path: Option<String>,   // Path within repo
 }
+```
+
+**Git source optimization flow:**
+
+```text
+1. Get remote commit SHA via `git ls-remote` (fast, no clone)
+2. Compare to lockfile commit SHA
+3. If match AND destination exists → skip (no clone needed)
+4. If mismatch → clone and install
 ```
 
 ### Enum-to-Adapter Bridge
@@ -148,15 +160,19 @@ The `cmd_sync()` function is the core workflow:
 
 1. **Manifest Discovery** - Walk up directory tree looking for `aps.yaml`
 2. **Entry Processing Loop** - For each manifest entry:
-   - Convert `Source` → `SourceAdapter` via `to_adapter()`
-   - Call `adapter.resolve(manifest_dir)` → `ResolvedSource`
-   - Verify source path exists
-   - Compute SHA256 checksum
-   - Check lockfile for matching checksums (skip if unchanged)
-   - Detect conflicts via `has_conflict()`
-   - Create backups if needed via `create_backup()`
-   - Install (copy or symlink)
-   - Update lockfile entry
+   - **Git sources (fast path)**: Check remote commit SHA via `git ls-remote`
+     - If commit matches lockfile AND destination exists → skip (no clone)
+     - Otherwise proceed to full resolution
+   - **Full resolution path**:
+     - Convert `Source` → `SourceAdapter` via `to_adapter()`
+     - Call `adapter.resolve(manifest_dir)` → `ResolvedSource`
+     - Verify source path exists
+     - Compute SHA256 checksum
+     - Check lockfile for matching checksums (skip if unchanged)
+     - Detect conflicts via `has_conflict()`
+     - Create backups if needed via `create_backup()`
+     - Install (copy or symlink)
+     - Update lockfile entry
 3. **Orphan Detection** - Find stale installations from changed manifests
 4. **Lockfile Save** - Persist installation metadata
 
@@ -213,8 +229,19 @@ pub struct LockedEntry {
 Provides deterministic SHA256 hashing for change detection:
 
 - **Files**: Hash content directly
-- **Directories**: Hash all files sorted by path + content
+- **Directories**: Hash all files sorted by path + content, excluding `.git/` directories
 - **Format**: `"sha256:<hex>"`
+
+**Change detection strategy by source type:**
+
+| Source Type    | Primary Change Detection       | Checksum Role                                               |
+| -------------- | ------------------------------ | ----------------------------------------------------------- |
+| **Filesystem** | Content checksum               | Primary - checksums detect file changes                     |
+| **Git**        | Commit SHA via `git ls-remote` | Secondary - stored in lockfile but commit SHA checked first |
+
+**Why commit SHA for git sources?** The commit SHA uniquely identifies the repository state. Checking it via `git ls-remote` is fast (no clone required) and deterministic. If the commit matches, the content is guaranteed identical.
+
+**Why exclude `.git/` from checksums?** Git's internal metadata (pack files, index, refs) varies between clones even for the same commit. Excluding `.git/` ensures that if a clone does happen, the checksum is consistent with previous installs of the same commit.
 
 ### Backup (`src/backup.rs`)
 
@@ -336,12 +363,12 @@ pub use http::HttpSource;
 
 ## Key Architectural Decisions
 
-| Decision | Rationale |
-|----------|-----------|
-| **Trait-based Adapters** | Enables adding new source types without touching core code |
-| **Lockfile Tracking** | Enables idempotent/deterministic installs; checksum detects actual changes |
-| **Manifest-driven** | Declarative configuration; single source of truth for asset definitions |
-| **Enum→Adapter Bridge** | Maintains backward-compatible YAML format while using trait dispatch internally |
-| **Temporary Directory Holder** | Safely manages git clone lifecycle (cleanup on drop) |
-| **Orphan Detection** | Prevents accumulation of stale installations when manifests change |
-| **Backup Before Overwrite** | Safe conflict resolution without data loss |
+| Decision                       | Rationale                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| **Trait-based Adapters**       | Enables adding new source types without touching core code                      |
+| **Lockfile Tracking**          | Enables idempotent/deterministic installs; checksum detects actual changes      |
+| **Manifest-driven**            | Declarative configuration; single source of truth for asset definitions         |
+| **Enum→Adapter Bridge**        | Maintains backward-compatible YAML format while using trait dispatch internally |
+| **Temporary Directory Holder** | Safely manages git clone lifecycle (cleanup on drop)                            |
+| **Orphan Detection**           | Prevents accumulation of stale installations when manifests change              |
+| **Backup Before Overwrite**    | Safe conflict resolution without data loss                                      |
