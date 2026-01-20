@@ -15,7 +15,7 @@ APS uses a **manifest-driven workflow** with **lockfile-based tracking** to prov
 
 ## Project Structure
 
-```
+```text
 src/
 ├── main.rs               # CLI entry point + command dispatch
 ├── cli.rs                # Argument parsing (clap)
@@ -142,7 +142,7 @@ This pattern maintains backward-compatible YAML format while using trait dispatc
 
 ## Command Flow
 
-```
+```text
 main.rs (Entry Point)
     ↓
 cli.rs (Argument Parsing with clap)
@@ -326,7 +326,7 @@ pub use http::HttpSource;
 
 ## Component Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    CLI Entry (main.rs)                      │
 │               Argument parsing (cli.rs)                     │
