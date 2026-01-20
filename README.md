@@ -1,6 +1,6 @@
 # Agentic Prompt Sync (aps)
 
-Use `aps` to combose and sync your own custom collection of agentic prompts/skills/etc. 
+Use `aps` to compose and sync your own custom collection of agentic prompts/skills/etc. 
 
 ![Example of running ap sync](./docs/aps-example.png)
 
