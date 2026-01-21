@@ -47,6 +47,16 @@ If you have Rust installed:
 cargo install aps
 ```
 
+### Aqua
+
+If you use [aqua](https://aquaproj.github.io/) for CLI version management:
+
+```bash
+aqua g -i westonplatter/agentic-prompt-sync
+```
+
+> **Note**: This package is pending submission to the [aqua-registry](https://github.com/aquaproj/aqua-registry). Until merged, you can use the local registry configuration in `aqua-registry/` directory. See [Contributing to aqua-registry](#contributing-to-aqua-registry) for details.
+
 ### Build from Source
 
 ```bash
@@ -236,6 +246,34 @@ trunk check list  # View available linters
 ```bash
 cargo run -- --verbose sync
 ```
+
+## Contributing to aqua-registry
+
+This repository includes an aqua registry configuration in `aqua-registry/pkgs/westonplatter/agentic-prompt-sync/`. To submit this package to the [aqua standard registry](https://github.com/aquaproj/aqua-registry):
+
+1. Fork [aquaproj/aqua-registry](https://github.com/aquaproj/aqua-registry)
+2. Copy the `aqua-registry/pkgs/westonplatter/` directory to `pkgs/westonplatter/` in your fork
+3. Run `aqua i -l` in the aqua-registry root to install development tools
+4. Run tests to verify the package works: `aqua-registry test -pkg westonplatter/agentic-prompt-sync`
+5. Submit a pull request
+
+### Using Local Registry (before standard registry merge)
+
+To use aps with aqua before the package is merged into the standard registry, create an `aqua.yaml` in your project:
+
+```yaml
+registries:
+  - type: local
+    name: local
+    path: path/to/agentic-prompt-sync/aqua-registry/pkgs/westonplatter/agentic-prompt-sync/registry.yaml
+
+packages:
+  - name: westonplatter/agentic-prompt-sync
+    registry: local
+    version: v0.1.4
+```
+
+Then run `aqua i` to install.
 
 ## Inspiration
 Built based on inspiration from these other projects,

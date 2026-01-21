@@ -1,0 +1,26 @@
+packages:
+  - type: github_release
+    repo_owner: westonplatter
+    repo_name: agentic-prompt-sync
+    description: CLI tool for syncing agentic assets (cursor rules, agent skills, AGENTS.md) from git repos or local filesystems
+    asset: aps-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: aps
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    replacements:
+      darwin: macos
+      amd64: x64
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+      - windows/amd64
+    rosetta2: true
+    windows_arm_emulation: true
