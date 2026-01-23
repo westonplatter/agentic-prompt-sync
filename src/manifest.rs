@@ -415,4 +415,45 @@ mod tests {
         assert!(entry.is_composite());
         assert_eq!(entry.destination(), PathBuf::from("AGENTS.md"));
     }
+
+    #[test]
+    fn test_composite_entry_mixed_sources() {
+        // Composite entries can mix git and filesystem sources
+        let entry = Entry {
+            id: "mixed-composite".to_string(),
+            kind: AssetKind::CompositeAgentsMd,
+            source: None,
+            sources: vec![
+                // Local filesystem source
+                Source::Filesystem {
+                    root: "$HOME/agents".to_string(),
+                    symlink: false,
+                    path: Some("AGENT.python.md".to_string()),
+                },
+                // Remote git source (e.g., Apache Airflow's AGENTS.md)
+                Source::Git {
+                    repo: "https://github.com/apache/airflow.git".to_string(),
+                    r#ref: "main".to_string(),
+                    shallow: true,
+                    path: Some("AGENTS.md".to_string()),
+                },
+                // Another filesystem source
+                Source::Filesystem {
+                    root: ".".to_string(),
+                    symlink: false,
+                    path: Some("agents.dockerfile.md".to_string()),
+                },
+            ],
+            dest: Some("./AGENTS.md".to_string()),
+            include: Vec::new(),
+        };
+
+        assert!(entry.is_composite());
+        assert_eq!(entry.sources.len(), 3);
+
+        // Verify source types
+        assert!(matches!(entry.sources[0], Source::Filesystem { .. }));
+        assert!(matches!(entry.sources[1], Source::Git { .. }));
+        assert!(matches!(entry.sources[2], Source::Filesystem { .. }));
+    }
 }

@@ -40,9 +40,8 @@ impl Default for ComposedSource {
 
 /// Read a markdown file and create a ComposedSource
 pub fn read_source_file(path: &Path) -> Result<ComposedSource> {
-    let content = std::fs::read_to_string(path).map_err(|e| {
-        ApsError::io(e, format!("Failed to read source file: {:?}", path))
-    })?;
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| ApsError::io(e, format!("Failed to read source file: {:?}", path)))?;
 
     let label = path
         .file_stem()
@@ -109,9 +108,8 @@ pub fn write_composed_file(content: &str, dest: &Path) -> Result<()> {
         }
     }
 
-    std::fs::write(dest, content).map_err(|e| {
-        ApsError::io(e, format!("Failed to write composed file: {:?}", dest))
-    })?;
+    std::fs::write(dest, content)
+        .map_err(|e| ApsError::io(e, format!("Failed to write composed file: {:?}", dest)))?;
 
     info!("Wrote composed file to {:?}", dest);
 

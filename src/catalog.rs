@@ -145,9 +145,12 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
     }
 
     // Get the source (required for non-composite entries)
-    let source = entry.source.as_ref().ok_or_else(|| ApsError::EntryRequiresSource {
-        id: entry.id.clone(),
-    })?;
+    let source = entry
+        .source
+        .as_ref()
+        .ok_or_else(|| ApsError::EntryRequiresSource {
+            id: entry.id.clone(),
+        })?;
 
     let adapter = source.to_adapter();
     let resolved = adapter.resolve(manifest_dir)?;

@@ -1,6 +1,8 @@
 use crate::backup::{create_backup, has_conflict};
 use crate::checksum::{compute_source_checksum, compute_string_checksum};
-use crate::compose::{compose_markdown, read_source_file, write_composed_file, ComposeOptions, ComposedSource};
+use crate::compose::{
+    compose_markdown, read_source_file, write_composed_file, ComposeOptions, ComposedSource,
+};
 use crate::error::{ApsError, Result};
 use crate::lockfile::{LockedEntry, Lockfile};
 use crate::manifest::{AssetKind, Entry};
@@ -51,9 +53,12 @@ pub fn install_entry(
     info!("Processing entry: {}", entry.id);
 
     // Get the source (required for non-composite entries)
-    let source = entry.source.as_ref().ok_or_else(|| ApsError::EntryRequiresSource {
-        id: entry.id.clone(),
-    })?;
+    let source = entry
+        .source
+        .as_ref()
+        .ok_or_else(|| ApsError::EntryRequiresSource {
+            id: entry.id.clone(),
+        })?;
 
     // For git sources, check if remote commit matches lockfile before cloning
     // This is much faster than cloning and comparing checksums
@@ -186,7 +191,7 @@ pub fn install_entry(
     // file-level symlinks which can coexist with other files in the directory.
     // Only check for conflicts on single-file assets or when copying.
     let should_check_conflict = match entry.kind {
-        AssetKind::AgentsMd => true, // Single file - always check
+        AssetKind::AgentsMd => true,          // Single file - always check
         AssetKind::CompositeAgentsMd => true, // Composite file - always check
         AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {
             // For directory assets with symlinks, we add files to the directory
@@ -318,7 +323,10 @@ pub fn install_composite_entry(
 
     // Check if content is unchanged
     if lockfile.checksum_matches(&entry.id, &checksum) && dest_path.exists() {
-        info!("Composite entry {} is up to date (checksum match)", entry.id);
+        info!(
+            "Composite entry {} is up to date (checksum match)",
+            entry.id
+        );
         return Ok(InstallResult {
             id: entry.id.clone(),
             installed: false,
@@ -378,8 +386,8 @@ pub fn install_composite_entry(
         &format!("composite: [{}]", source_paths.join(", ")),
         &dest_path.to_string_lossy(),
         checksum,
-        false, // not a symlink
-        None,  // no target path
+        false,      // not a symlink
+        None,       // no target path
         Vec::new(), // no symlinked items
     );
 

@@ -259,7 +259,11 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
     for entry in &manifest.entries {
         // Handle composite entries differently
         if entry.is_composite() {
-            print!("  [..] {} (composite) - checking {} sources...", entry.id, entry.sources.len());
+            print!(
+                "  [..] {} (composite) - checking {} sources...",
+                entry.id,
+                entry.sources.len()
+            );
             std::io::stdout().flush().ok();
 
             let mut all_valid = true;
@@ -268,7 +272,8 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
                 match adapter.resolve(&base_dir) {
                     Ok(resolved) => {
                         if !resolved.source_path.exists() {
-                            let warning = format!("Source path not found: {:?}", resolved.source_path);
+                            let warning =
+                                format!("Source path not found: {:?}", resolved.source_path);
                             if args.strict {
                                 println!(" FAILED");
                                 return Err(ApsError::SourcePathNotFound {
@@ -292,7 +297,11 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
             }
 
             if all_valid {
-                println!("\r  [OK] {} (composite, {} sources)", entry.id, entry.sources.len());
+                println!(
+                    "\r  [OK] {} (composite, {} sources)",
+                    entry.id,
+                    entry.sources.len()
+                );
             } else {
                 println!(" WARN");
             }
@@ -305,7 +314,9 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
             None => {
                 let warning = format!("Entry '{}' has no source configured", entry.id);
                 if args.strict {
-                    return Err(ApsError::EntryRequiresSource { id: entry.id.clone() });
+                    return Err(ApsError::EntryRequiresSource {
+                        id: entry.id.clone(),
+                    });
                 }
                 println!("  [WARN] {} - {}", entry.id, warning);
                 warnings.push(warning);
