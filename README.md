@@ -129,50 +129,14 @@ Note: Stale entry cleanup only happens during a full sync. When using `--only <i
 
 ```yaml
 entries:
+  # Single AGENTS.md file from one source
   - id: my-agents
     kind: agents_md
     source:
       type: filesystem
       root: $HOME
       path: AGENTS-generic.md
-    dest: AGENTS.md
-
-  - id: personal-rules
-    kind: cursor_rules
-    source:
-      type: git
-      repo: git@github.com:your-username/dotfiles.git
-      ref: main
-      path: .cursor/rules
-    dest: ./.cursor/rules/
-
-  - id: company-rules
-    kind: cursor_rules
-    source:
-      type: filesystem
-      root: $HOME/work/acme-corp/internal-prompts
-      path: rules
-    dest: ./.cursor/rules/
-
-  - id: rules-in-formation
-    kind: cursor_rules
-    source:
-      type: filesystem
-      root: $HOME/work/acme-corp/internal-prompts
-      path: dumping-ground
-    dest: ./.cursor/rules/
-
-  - id: anthropic-skills
-    kind: agent_skill
-    source:
-      type: git
-      repo: git@github.com:anthropics/skills.git
-      ref: main
-      path: skills
-    include:
-      - pdf
-      - skill-creation
-    dest: ./.claude/skills/
+    dest: ./AGENTS-simple.md
 
   # Composite AGENTS.md - merge multiple markdown files into one
   - id: composite-agents
@@ -189,6 +153,38 @@ entries:
         ref: main
         path: AGENTS.md
     dest: ./AGENTS.md
+
+  # Pull in Agent Skills from a public git repo
+  - id: anthropic-skills
+    kind: agent_skill
+    source:
+      type: git
+      repo: git@github.com:anthropics/skills.git
+      ref: main
+      path: skills
+    include:
+      - pdf
+      - skill-creation
+    dest: ./.claude/skills/
+
+  # Pull Cursor Rules from a private git repo
+  - id: personal-rules
+    kind: cursor_rules
+    source:
+      type: git
+      repo: git@github.com:your-username/dotfiles.git
+      ref: main
+      path: .cursor/rules
+    dest: ./.cursor/rules/
+
+  # Pull in more Cursor Rules from a local file system
+  - id: company-rules
+    kind: cursor_rules
+    source:
+      type: filesystem
+      root: $HOME/work/acme-corp/internal-prompts
+      path: rules
+    dest: ./.cursor/rules/
 ```
 
 ### Asset Types
@@ -221,16 +217,13 @@ entries:
     sources:
       # Local filesystem sources
       - type: filesystem
-        root: $HOME/agents
-        path: AGENT.python.md
-      - type: filesystem
-        root: $HOME/agents
-        path: AGENT.pandas.md
+        root: $HOME/agents-md-partials
+        path: AGENT.docker.md
       # Remote git sources
       - type: git
-        repo: https://github.com/apache/airflow.git
+        repo: https://github.com/westonplatter/agentically.git
         ref: main
-        path: AGENTS.md
+        path: agents-md-partials/AGENTS.python.md
     dest: ./AGENTS.md
 ```
 
