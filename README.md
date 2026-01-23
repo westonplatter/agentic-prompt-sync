@@ -163,16 +163,33 @@ entries:
       - pdf
       - skill-creation
     dest: ./.claude/skills/
+
+  # Composite AGENTS.md - merge multiple markdown files into one
+  - id: composite-agents
+    kind: composite_agents_md
+    sources:
+      - type: filesystem
+        root: $HOME/agents
+        path: AGENT.python.md
+      - type: filesystem
+        root: $HOME/agents
+        path: AGENT.docker.md
+      - type: git
+        repo: https://github.com/apache/airflow.git
+        ref: main
+        path: AGENTS.md
+    dest: ./AGENTS.md
 ```
 
 ### Asset Types
 
-| Kind                 | Description                  | Default Destination |
-| -------------------- | ---------------------------- | ------------------- |
-| `agents_md`          | Single AGENTS.md file        | `./AGENTS.md`       |
-| `cursor_rules`       | Directory of Cursor rules    | `./.cursor/rules/`  |
-| `cursor_skills_root` | Directory with skill subdirs | `./.cursor/skills/` |
-| `agent_skill`        | Claude agent skill directory | `./.claude/skills/` |
+| Kind                   | Description                           | Default Destination |
+| ---------------------- | ------------------------------------- | ------------------- |
+| `agents_md`            | Single AGENTS.md file                 | `./AGENTS.md`       |
+| `composite_agents_md`  | Merge multiple markdown files into one| `./AGENTS.md`       |
+| `cursor_rules`         | Directory of Cursor rules             | `./.cursor/rules/`  |
+| `cursor_skills_root`   | Directory with skill subdirs          | `./.cursor/skills/` |
+| `agent_skill`          | Claude agent skill directory          | `./.claude/skills/` |
 
 ### Source Types
 
@@ -182,6 +199,35 @@ entries:
 | `git`        | Sync from a git repository  | `repo`, `ref`, `path`, `shallow` |
 
 **Shell Variable Expansion**: Path values in `root` and `path` fields support shell variable expansion (e.g., `$HOME`, `$USER`). This makes manifests portable across different machines and users.
+
+### Composite AGENTS.md
+
+The `composite_agents_md` kind allows you to merge multiple markdown files into a single `AGENTS.md` file. This is useful when you want to organize agent definitions across separate files (e.g., by language or framework) and combine them at sync time.
+
+```yaml
+entries:
+  - id: my-composite-agents
+    kind: composite_agents_md
+    sources:
+      # Local filesystem sources
+      - type: filesystem
+        root: $HOME/agents
+        path: AGENT.python.md
+      - type: filesystem
+        root: $HOME/agents
+        path: AGENT.pandas.md
+      # Remote git sources
+      - type: git
+        repo: https://github.com/apache/airflow.git
+        ref: main
+        path: AGENTS.md
+    dest: ./AGENTS.md
+```
+
+Key features:
+- **Mixed sources**: Combine local filesystem and remote git sources
+- **Order preserved**: Files are merged in the order specified in `sources`
+- **Auto-generated header**: Output includes a comment indicating it was composed by aps
 
 ### Lockfile (`aps.manifest.lock`)
 
