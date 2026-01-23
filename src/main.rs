@@ -3,6 +3,7 @@ mod catalog;
 mod checksum;
 mod cli;
 mod commands;
+mod compose;
 mod error;
 mod install;
 mod lockfile;

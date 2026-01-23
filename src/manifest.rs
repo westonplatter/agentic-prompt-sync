@@ -33,8 +33,13 @@ pub struct Entry {
     /// The kind of asset
     pub kind: AssetKind,
 
-    /// The source to sync from
-    pub source: Source,
+    /// The source to sync from (for single-source entries)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<Source>,
+
+    /// Multiple sources to compose (for composite_agents_md kind)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<Source>,
 
     /// Optional destination override
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,14 +56,20 @@ impl Entry {
         Self {
             id: "my-agents".to_string(),
             kind: AssetKind::AgentsMd,
-            source: Source::Filesystem {
+            source: Some(Source::Filesystem {
                 root: "../shared-assets".to_string(),
                 symlink: true,
                 path: Some("AGENTS.md".to_string()),
-            },
+            }),
+            sources: Vec::new(),
             dest: None,
             include: Vec::new(),
         }
+    }
+
+    /// Check if this is a composite entry (uses multiple sources)
+    pub fn is_composite(&self) -> bool {
+        self.kind == AssetKind::CompositeAgentsMd && !self.sources.is_empty()
     }
 
     /// Get the destination path for this entry (with shell variable expansion)
@@ -86,6 +97,8 @@ pub enum AssetKind {
     AgentsMd,
     /// Agent skill directory (per agentskills.io spec)
     AgentSkill,
+    /// Composite AGENTS.md - merge multiple markdown files into one
+    CompositeAgentsMd,
 }
 
 impl AssetKind {
@@ -96,6 +109,7 @@ impl AssetKind {
             AssetKind::CursorSkillsRoot => PathBuf::from(".cursor/skills"),
             AssetKind::AgentsMd => PathBuf::from("AGENTS.md"),
             AssetKind::AgentSkill => PathBuf::from(".claude/skills"),
+            AssetKind::CompositeAgentsMd => PathBuf::from("AGENTS.md"),
         }
     }
 
@@ -107,6 +121,7 @@ impl AssetKind {
             "cursor_skills_root" => Ok(AssetKind::CursorSkillsRoot),
             "agents_md" => Ok(AssetKind::AgentsMd),
             "agent_skill" => Ok(AssetKind::AgentSkill),
+            "composite_agents_md" => Ok(AssetKind::CompositeAgentsMd),
             _ => Err(ApsError::InvalidAssetKind {
                 kind: s.to_string(),
             }),
@@ -261,6 +276,23 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<()> {
                 id: entry.id.clone(),
             });
         }
+
+        // Validate source configuration based on kind
+        if entry.kind == AssetKind::CompositeAgentsMd {
+            // Composite entries require sources array
+            if entry.sources.is_empty() {
+                return Err(ApsError::CompositeRequiresSources {
+                    id: entry.id.clone(),
+                });
+            }
+        } else {
+            // Non-composite entries require single source
+            if entry.source.is_none() {
+                return Err(ApsError::EntryRequiresSource {
+                    id: entry.id.clone(),
+                });
+            }
+        }
     }
 
     info!("Manifest validation passed");
@@ -284,11 +316,12 @@ mod tests {
         let entry = Entry {
             id: "test".to_string(),
             kind: AssetKind::AgentsMd,
-            source: Source::Filesystem {
+            source: Some(Source::Filesystem {
                 root: ".".to_string(),
                 symlink: true,
                 path: None,
-            },
+            }),
+            sources: Vec::new(),
             dest: None,
             include: Vec::new(),
         };
@@ -301,11 +334,12 @@ mod tests {
         let entry = Entry {
             id: "test".to_string(),
             kind: AssetKind::AgentsMd,
-            source: Source::Filesystem {
+            source: Some(Source::Filesystem {
                 root: ".".to_string(),
                 symlink: true,
                 path: None,
-            },
+            }),
+            sources: Vec::new(),
             dest: Some("custom/path/AGENTS.md".to_string()),
             include: Vec::new(),
         };
@@ -320,11 +354,12 @@ mod tests {
         let entry = Entry {
             id: "test".to_string(),
             kind: AssetKind::AgentsMd,
-            source: Source::Filesystem {
+            source: Some(Source::Filesystem {
                 root: ".".to_string(),
                 symlink: true,
                 path: None,
-            },
+            }),
+            sources: Vec::new(),
             dest: Some("$TEST_DEST_VAR/AGENTS.md".to_string()),
             include: Vec::new(),
         };
@@ -339,11 +374,12 @@ mod tests {
         let entry = Entry {
             id: "test".to_string(),
             kind: AssetKind::AgentsMd,
-            source: Source::Filesystem {
+            source: Some(Source::Filesystem {
                 root: ".".to_string(),
                 symlink: true,
                 path: None,
-            },
+            }),
+            sources: Vec::new(),
             dest: Some("~/agents/AGENTS.md".to_string()),
             include: Vec::new(),
         };
@@ -352,5 +388,31 @@ mod tests {
         // Tilde should be expanded to home directory
         assert!(result.to_string_lossy().contains("agents/AGENTS.md"));
         assert!(!result.to_string_lossy().starts_with("~"));
+    }
+
+    #[test]
+    fn test_composite_entry() {
+        let entry = Entry {
+            id: "composite-test".to_string(),
+            kind: AssetKind::CompositeAgentsMd,
+            source: None,
+            sources: vec![
+                Source::Filesystem {
+                    root: ".".to_string(),
+                    symlink: false,
+                    path: Some("agents.python.md".to_string()),
+                },
+                Source::Filesystem {
+                    root: ".".to_string(),
+                    symlink: false,
+                    path: Some("agents.pandas.md".to_string()),
+                },
+            ],
+            dest: None,
+            include: Vec::new(),
+        };
+
+        assert!(entry.is_composite());
+        assert_eq!(entry.destination(), PathBuf::from("AGENTS.md"));
     }
 }

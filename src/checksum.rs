@@ -56,3 +56,11 @@ pub fn compute_checksum(path: &Path) -> Result<String> {
 pub fn compute_source_checksum(source_path: &Path) -> Result<String> {
     compute_checksum(source_path)
 }
+
+/// Compute checksum for string content (for composed files)
+pub fn compute_string_checksum(content: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    let result = hasher.finalize();
+    format!("sha256:{}", hex::encode(result))
+}

@@ -122,6 +122,24 @@ pub enum ApsError {
     #[error("Failed to read catalog: {message}")]
     #[diagnostic(code(aps::catalog::read_error))]
     CatalogReadError { message: String },
+
+    #[error("Composite entry '{id}' requires 'sources' array")]
+    #[diagnostic(
+        code(aps::manifest::composite_requires_sources),
+        help("Add a 'sources' array with multiple source entries to compose")
+    )]
+    CompositeRequiresSources { id: String },
+
+    #[error("Entry '{id}' requires a 'source' field")]
+    #[diagnostic(
+        code(aps::manifest::entry_requires_source),
+        help("Add a 'source' field with the source configuration")
+    )]
+    EntryRequiresSource { id: String },
+
+    #[error("Failed to compose markdown files: {message}")]
+    #[diagnostic(code(aps::compose::error))]
+    ComposeError { message: String },
 }
 
 impl ApsError {

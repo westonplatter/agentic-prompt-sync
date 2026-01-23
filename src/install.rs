@@ -1,5 +1,6 @@
 use crate::backup::{create_backup, has_conflict};
-use crate::checksum::compute_source_checksum;
+use crate::checksum::{compute_source_checksum, compute_string_checksum};
+use crate::compose::{compose_markdown, read_source_file, write_composed_file, ComposeOptions, ComposedSource};
 use crate::error::{ApsError, Result};
 use crate::lockfile::{LockedEntry, Lockfile};
 use crate::manifest::{AssetKind, Entry};
@@ -49,9 +50,14 @@ pub fn install_entry(
 ) -> Result<InstallResult> {
     info!("Processing entry: {}", entry.id);
 
+    // Get the source (required for non-composite entries)
+    let source = entry.source.as_ref().ok_or_else(|| ApsError::EntryRequiresSource {
+        id: entry.id.clone(),
+    })?;
+
     // For git sources, check if remote commit matches lockfile before cloning
     // This is much faster than cloning and comparing checksums
-    if let Some((repo, git_ref)) = entry.source.git_info() {
+    if let Some((repo, git_ref)) = source.git_info() {
         let dest_path = manifest_dir.join(entry.destination());
 
         // Only skip if destination exists - if it doesn't, we need to install
@@ -89,7 +95,7 @@ pub fn install_entry(
     }
 
     // Convert source to adapter and resolve
-    let adapter = entry.source.to_adapter();
+    let adapter = source.to_adapter();
     let resolved = adapter.resolve(manifest_dir)?;
     debug!("Source path: {:?}", resolved.source_path);
 
@@ -181,6 +187,7 @@ pub fn install_entry(
     // Only check for conflicts on single-file assets or when copying.
     let should_check_conflict = match entry.kind {
         AssetKind::AgentsMd => true, // Single file - always check
+        AssetKind::CompositeAgentsMd => true, // Composite file - always check
         AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {
             // For directory assets with symlinks, we add files to the directory
             // without backing up existing content from other sources
@@ -256,6 +263,137 @@ pub fn install_entry(
     })
 }
 
+/// Install a composite entry (merge multiple sources into one file)
+pub fn install_composite_entry(
+    entry: &Entry,
+    manifest_dir: &Path,
+    lockfile: &Lockfile,
+    options: &InstallOptions,
+) -> Result<InstallResult> {
+    info!("Processing composite entry: {}", entry.id);
+
+    if entry.sources.is_empty() {
+        return Err(ApsError::CompositeRequiresSources {
+            id: entry.id.clone(),
+        });
+    }
+
+    // Resolve all sources and collect their content
+    let mut composed_sources: Vec<ComposedSource> = Vec::new();
+    let mut all_checksums: Vec<String> = Vec::new();
+
+    for source in &entry.sources {
+        let adapter = source.to_adapter();
+        let resolved = adapter.resolve(manifest_dir)?;
+
+        if !resolved.source_path.exists() {
+            return Err(ApsError::SourcePathNotFound {
+                path: resolved.source_path,
+            });
+        }
+
+        // Read the source file
+        let composed_source = read_source_file(&resolved.source_path)?;
+        composed_sources.push(composed_source);
+
+        // Compute and collect checksum for this source
+        let source_checksum = compute_source_checksum(&resolved.source_path)?;
+        all_checksums.push(source_checksum);
+    }
+
+    // Compose all sources into one markdown string
+    let compose_options = ComposeOptions {
+        add_separators: false,
+        include_source_info: false,
+    };
+    let composed_content = compose_markdown(&composed_sources, &compose_options)?;
+
+    // Compute checksum of the final composed content
+    let checksum = compute_string_checksum(&composed_content);
+    debug!("Composed content checksum: {}", checksum);
+
+    // Resolve destination path
+    let dest_path = manifest_dir.join(entry.destination());
+    debug!("Destination path: {:?}", dest_path);
+
+    // Check if content is unchanged
+    if lockfile.checksum_matches(&entry.id, &checksum) && dest_path.exists() {
+        info!("Composite entry {} is up to date (checksum match)", entry.id);
+        return Ok(InstallResult {
+            id: entry.id.clone(),
+            installed: false,
+            skipped_no_change: true,
+            locked_entry: None,
+            warnings: Vec::new(),
+            dest_path: dest_path.clone(),
+            was_symlink: false,
+        });
+    }
+
+    // Check for conflicts
+    if has_conflict(&dest_path) {
+        info!("Conflict detected at {:?}", dest_path);
+
+        if options.dry_run {
+            println!("[dry-run] Would backup and overwrite: {:?}", dest_path);
+        } else {
+            let should_overwrite = if options.yes {
+                true
+            } else if std::io::stdin().is_terminal() {
+                Confirm::new()
+                    .with_prompt(format!("Overwrite existing content at {:?}?", dest_path))
+                    .default(false)
+                    .interact()
+                    .map_err(|_| ApsError::Cancelled)?
+            } else {
+                return Err(ApsError::RequiresYesFlag);
+            };
+
+            if !should_overwrite {
+                info!("User declined to overwrite {:?}", dest_path);
+                return Err(ApsError::Cancelled);
+            }
+
+            // Create backup
+            let backup_path = create_backup(manifest_dir, &dest_path)?;
+            println!("Created backup at: {:?}", backup_path);
+        }
+    }
+
+    // Write the composed file
+    if !options.dry_run {
+        write_composed_file(&composed_content, &dest_path)?;
+        info!("Wrote composed file to {:?}", dest_path);
+    } else {
+        println!("[dry-run] Would write composed file to {:?}", dest_path);
+    }
+
+    // Create locked entry
+    let source_paths: Vec<String> = composed_sources
+        .iter()
+        .map(|s| s.path.to_string_lossy().to_string())
+        .collect();
+
+    let locked_entry = LockedEntry::new_filesystem(
+        &format!("composite: [{}]", source_paths.join(", ")),
+        &dest_path.to_string_lossy(),
+        checksum,
+        false, // not a symlink
+        None,  // no target path
+        Vec::new(), // no symlinked items
+    );
+
+    Ok(InstallResult {
+        id: entry.id.clone(),
+        installed: !options.dry_run,
+        skipped_no_change: false,
+        locked_entry: Some(locked_entry),
+        warnings: Vec::new(),
+        dest_path,
+        was_symlink: false,
+    })
+}
+
 /// Install an asset based on its kind
 fn install_asset(
     kind: &AssetKind,
@@ -288,6 +426,13 @@ fn install_asset(
                 })?;
                 debug!("Copied file {:?} to {:?}", source, dest);
             }
+        }
+        AssetKind::CompositeAgentsMd => {
+            // Composite entries are handled by install_composite_entry, not this function
+            // This arm exists for exhaustive matching
+            return Err(ApsError::ComposeError {
+                message: "Composite entries should use install_composite_entry".to_string(),
+            });
         }
         AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {
             if use_symlink {
