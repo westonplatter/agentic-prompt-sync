@@ -1,6 +1,6 @@
 # Agentic Prompt Sync (aps)
 
-Use `aps` to compose and sync your own custom collection of agentic prompts/skills/etc. 
+Use `aps` to compose and sync your own custom collection of agentic prompts/skills/etc.
 
 ![Example of running ap sync](./docs/aps-example.png)
 
@@ -193,13 +193,13 @@ entries:
 
 ### Asset Types
 
-| Kind                   | Description                           | Default Destination |
-| ---------------------- | ------------------------------------- | ------------------- |
-| `agents_md`            | Single AGENTS.md file                 | `./AGENTS.md`       |
-| `composite_agents_md`  | Merge multiple markdown files into one| `./AGENTS.md`       |
-| `cursor_rules`         | Directory of Cursor rules             | `./.cursor/rules/`  |
-| `cursor_skills_root`   | Directory with skill subdirs          | `./.cursor/skills/` |
-| `agent_skill`          | Claude agent skill directory          | `./.claude/skills/` |
+| Kind                  | Description                            | Default Destination |
+| --------------------- | -------------------------------------- | ------------------- |
+| `agents_md`           | Single AGENTS.md file                  | `./AGENTS.md`       |
+| `composite_agents_md` | Merge multiple markdown files into one | `./AGENTS.md`       |
+| `cursor_rules`        | Directory of Cursor rules              | `./.cursor/rules/`  |
+| `cursor_skills_root`  | Directory with skill subdirs           | `./.cursor/skills/` |
+| `agent_skill`         | Claude agent skill directory           | `./.claude/skills/` |
 
 ### Source Types
 
@@ -235,6 +235,7 @@ entries:
 ```
 
 Key features:
+
 - **Mixed sources**: Combine local filesystem and remote git sources
 - **Order preserved**: Files are merged in the order specified in `sources`
 - **Auto-generated header**: Output includes a comment indicating it was composed by aps
@@ -296,6 +297,7 @@ cargo run -- --verbose sync
 ```
 
 ## Inspiration
+
 Built based on inspiration from these other projects,
 
 - rule-tool - https://github.com/circleci-petri/rule-tool/
