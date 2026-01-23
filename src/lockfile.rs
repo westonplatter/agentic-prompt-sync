@@ -196,6 +196,44 @@ impl Lockfile {
     }
 }
 
+/// Display status information from the lockfile
+pub fn display_status(lockfile: &Lockfile) {
+    if lockfile.entries.is_empty() {
+        println!("No entries in lockfile.");
+        return;
+    }
+
+    println!("Synced entries:");
+    println!("{}", "-".repeat(80));
+
+    for (id, entry) in &lockfile.entries {
+        println!("ID:           {}", id);
+        println!("Source:       {}", entry.source);
+        println!("Destination:  {}", entry.dest);
+        if let Some(ref resolved_ref) = entry.resolved_ref {
+            println!("Ref:          {}", resolved_ref);
+        }
+        if let Some(ref commit) = entry.commit {
+            println!("Commit:       {}", commit);
+        }
+        if entry.is_symlink {
+            println!("Type:         symlink");
+            if let Some(ref target) = entry.target_path {
+                println!("Target:       {}", target);
+            }
+            if !entry.symlinked_items.is_empty() {
+                println!("Items:        {} symlinked", entry.symlinked_items.len());
+            }
+        }
+        println!(
+            "Last updated: {}",
+            entry.last_updated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        );
+        println!("Checksum:     {}", entry.checksum);
+        println!("{}", "-".repeat(80));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,43 +343,5 @@ mod tests {
 
         assert!(removed.is_empty());
         assert_eq!(lockfile.entries.len(), 2);
-    }
-}
-
-/// Display status information from the lockfile
-pub fn display_status(lockfile: &Lockfile) {
-    if lockfile.entries.is_empty() {
-        println!("No entries in lockfile.");
-        return;
-    }
-
-    println!("Synced entries:");
-    println!("{}", "-".repeat(80));
-
-    for (id, entry) in &lockfile.entries {
-        println!("ID:           {}", id);
-        println!("Source:       {}", entry.source);
-        println!("Destination:  {}", entry.dest);
-        if let Some(ref resolved_ref) = entry.resolved_ref {
-            println!("Ref:          {}", resolved_ref);
-        }
-        if let Some(ref commit) = entry.commit {
-            println!("Commit:       {}", commit);
-        }
-        if entry.is_symlink {
-            println!("Type:         symlink");
-            if let Some(ref target) = entry.target_path {
-                println!("Target:       {}", target);
-            }
-            if !entry.symlinked_items.is_empty() {
-                println!("Items:        {} symlinked", entry.symlinked_items.len());
-            }
-        }
-        println!(
-            "Last updated: {}",
-            entry.last_updated_at.format("%Y-%m-%d %H:%M:%S UTC")
-        );
-        println!("Checksum:     {}", entry.checksum);
-        println!("{}", "-".repeat(80));
     }
 }
