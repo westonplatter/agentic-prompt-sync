@@ -128,7 +128,31 @@ impl Catalog {
 
 /// Enumerate all individual assets from a manifest entry
 fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<CatalogEntry>> {
-    let adapter = entry.source.to_adapter();
+    let base_dest = entry.destination();
+    let mut catalog_entries = Vec::new();
+
+    // Handle composite entries (no single source to resolve)
+    if entry.is_composite() {
+        // For composite entries, we create a single catalog entry
+        catalog_entries.push(CatalogEntry {
+            id: format!("{}:composite", entry.id),
+            name: "AGENTS.md (composite)".to_string(),
+            kind: AssetKind::CompositeAgentsMd,
+            destination: format!("./{}", base_dest.display()),
+            short_description: Some(format!("Composed from {} sources", entry.sources.len())),
+        });
+        return Ok(catalog_entries);
+    }
+
+    // Get the source (required for non-composite entries)
+    let source = entry
+        .source
+        .as_ref()
+        .ok_or_else(|| ApsError::EntryRequiresSource {
+            id: entry.id.clone(),
+        })?;
+
+    let adapter = source.to_adapter();
     let resolved = adapter.resolve(manifest_dir)?;
 
     if !resolved.source_path.exists() {
@@ -137,16 +161,13 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
         });
     }
 
-    let base_dest = entry.destination();
-    let mut catalog_entries = Vec::new();
-
     match entry.kind {
         AssetKind::AgentsMd => {
             // Single file - create one entry
             let name = resolved
                 .source_path
                 .file_name()
-                .map(|n| n.to_string_lossy().to_string())
+                .map(|n: &std::ffi::OsStr| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "AGENTS.md".to_string());
 
             let short_description = extract_agents_md_description(&resolved.source_path);
@@ -157,6 +178,16 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
                 kind: AssetKind::AgentsMd,
                 destination: format!("./{}", base_dest.display()),
                 short_description,
+            });
+        }
+        AssetKind::CompositeAgentsMd => {
+            // This case is handled above, but include for completeness
+            catalog_entries.push(CatalogEntry {
+                id: format!("{}:composite", entry.id),
+                name: "AGENTS.md (composite)".to_string(),
+                kind: AssetKind::CompositeAgentsMd,
+                destination: format!("./{}", base_dest.display()),
+                short_description: None,
             });
         }
         AssetKind::CursorRules => {

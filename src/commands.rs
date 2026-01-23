@@ -3,7 +3,7 @@ use crate::cli::{
     CatalogGenerateArgs, InitArgs, ManifestFormat, StatusArgs, SyncArgs, ValidateArgs,
 };
 use crate::error::{ApsError, Result};
-use crate::install::{install_entry, InstallOptions, InstallResult};
+use crate::install::{install_composite_entry, install_entry, InstallOptions, InstallResult};
 use crate::lockfile::{display_status, Lockfile};
 use crate::manifest::{
     discover_manifest, manifest_dir, validate_manifest, AssetKind, Manifest, DEFAULT_MANIFEST_NAME,
@@ -150,7 +150,12 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
     // Install selected entries
     let mut results: Vec<InstallResult> = Vec::new();
     for entry in &entries_to_install {
-        let result = install_entry(entry, &base_dir, &lockfile, &options)?;
+        // Use composite install for composite entries, regular install otherwise
+        let result = if entry.is_composite() {
+            install_composite_entry(entry, &base_dir, &lockfile, &options)?
+        } else {
+            install_entry(entry, &base_dir, &lockfile, &options)?
+        };
         results.push(result);
     }
 
@@ -264,7 +269,74 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
 
     println!("\nValidating entries:");
     for entry in &manifest.entries {
-        let adapter = entry.source.to_adapter();
+        // Handle composite entries differently
+        if entry.is_composite() {
+            print!(
+                "  [..] {} (composite) - checking {} sources...",
+                entry.id,
+                entry.sources.len()
+            );
+            std::io::stdout().flush().ok();
+
+            let mut all_valid = true;
+            for source in &entry.sources {
+                let adapter = source.to_adapter();
+                match adapter.resolve(&base_dir) {
+                    Ok(resolved) => {
+                        if !resolved.source_path.exists() {
+                            let warning =
+                                format!("Source path not found: {:?}", resolved.source_path);
+                            if args.strict {
+                                println!(" FAILED");
+                                return Err(ApsError::SourcePathNotFound {
+                                    path: resolved.source_path,
+                                });
+                            }
+                            warnings.push(warning);
+                            all_valid = false;
+                        }
+                    }
+                    Err(e) => {
+                        if args.strict {
+                            println!(" FAILED");
+                            return Err(e);
+                        }
+                        let warning = format!("Source validation failed: {}", e);
+                        warnings.push(warning);
+                        all_valid = false;
+                    }
+                }
+            }
+
+            if all_valid {
+                println!(
+                    "\r  [OK] {} (composite, {} sources)",
+                    entry.id,
+                    entry.sources.len()
+                );
+            } else {
+                println!(" WARN");
+            }
+            continue;
+        }
+
+        // Handle regular (single-source) entries
+        let source = match &entry.source {
+            Some(s) => s,
+            None => {
+                let warning = format!("Entry '{}' has no source configured", entry.id);
+                if args.strict {
+                    return Err(ApsError::EntryRequiresSource {
+                        id: entry.id.clone(),
+                    });
+                }
+                println!("  [WARN] {} - {}", entry.id, warning);
+                warnings.push(warning);
+                continue;
+            }
+        };
+
+        let adapter = source.to_adapter();
         let source_type = adapter.source_type();
         let display_name = adapter.display_name();
 
