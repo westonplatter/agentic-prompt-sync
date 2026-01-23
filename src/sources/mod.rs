@@ -88,9 +88,7 @@ impl ResolvedSource {
         } else {
             // For filesystem sources, preserve shell variables in paths
             let (target_path, transformed_items) = if self.use_symlink {
-                let target = self.preserve_shell_vars_in_path(
-                    &self.source_path.to_string_lossy(),
-                );
+                let target = self.preserve_shell_vars_in_path(&self.source_path.to_string_lossy());
                 let items = symlinked_items
                     .iter()
                     .map(|item| self.preserve_shell_vars_in_path(item))
@@ -113,15 +111,10 @@ impl ResolvedSource {
 
     /// Replace expanded root path with original root path to preserve shell variables
     fn preserve_shell_vars_in_path(&self, expanded_path: &str) -> String {
-        if let (Some(ref original), Some(ref expanded)) =
-            (&self.original_root, &self.expanded_root)
+        if let (Some(ref original), Some(ref expanded)) = (&self.original_root, &self.expanded_root)
         {
             if expanded_path.starts_with(expanded) {
-                return format!(
-                    "{}{}",
-                    original,
-                    &expanded_path[expanded.len()..]
-                );
+                return format!("{}{}", original, &expanded_path[expanded.len()..]);
             }
         }
         expanded_path.to_string()
