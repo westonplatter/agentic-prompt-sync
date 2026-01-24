@@ -35,11 +35,11 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
     let manifest = Manifest::default();
 
     let content = match args.format {
-        ManifestFormat::Yaml => serde_yaml::to_string(&manifest).map_err(|e| {
-            ApsError::ManifestParseError {
+        ManifestFormat::Yaml => {
+            serde_yaml::to_string(&manifest).map_err(|e| ApsError::ManifestParseError {
                 message: format!("Failed to serialize manifest: {}", e),
-            }
-        })?,
+            })?
+        }
         ManifestFormat::Toml => {
             // For TOML, we'd need a different serializer, but YAML is default
             // This is a simplified version

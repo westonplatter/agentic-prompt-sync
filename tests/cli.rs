@@ -61,11 +61,7 @@ fn init_creates_manifest_file() {
 fn init_creates_gitignore_entry() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    aps()
-        .arg("init")
-        .current_dir(&temp)
-        .assert()
-        .success();
+    aps().arg("init").current_dir(&temp).assert().success();
 
     temp.child(".gitignore")
         .assert(predicate::str::contains(".aps-backups/"));
@@ -118,24 +114,16 @@ fn sync_with_empty_manifest_succeeds() {
     let temp = assert_fs::TempDir::new().unwrap();
 
     // Create a minimal valid manifest with no entries
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
-    aps()
-        .arg("sync")
-        .current_dir(&temp)
-        .assert()
-        .success();
+    aps().arg("sync").current_dir(&temp).assert().success();
 }
 
 #[test]
 fn sync_dry_run_does_not_create_lockfile() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
     aps()
         .args(["sync", "--dry-run"])
@@ -152,15 +140,9 @@ fn sync_dry_run_does_not_create_lockfile() {
 fn sync_creates_lockfile() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
-    aps()
-        .arg("sync")
-        .current_dir(&temp)
-        .assert()
-        .success();
+    aps().arg("sync").current_dir(&temp).assert().success();
 
     temp.child("aps.manifest.lock")
         .assert(predicate::path::exists());
@@ -170,9 +152,7 @@ fn sync_creates_lockfile() {
 fn sync_with_invalid_entry_id_fails() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
     aps()
         .args(["sync", "--only", "nonexistent"])
@@ -202,9 +182,7 @@ fn validate_fails_without_manifest() {
 fn validate_empty_manifest_succeeds() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
     aps()
         .arg("validate")
@@ -222,11 +200,7 @@ fn validate_invalid_yaml_fails() {
         .write_str("this is not: valid: yaml: [")
         .unwrap();
 
-    aps()
-        .arg("validate")
-        .current_dir(&temp)
-        .assert()
-        .failure();
+    aps().arg("validate").current_dir(&temp).assert().failure();
 }
 
 // ============================================================================
@@ -249,9 +223,7 @@ fn status_fails_without_manifest() {
 fn status_fails_without_lockfile() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
     aps()
         .arg("status")
@@ -265,23 +237,13 @@ fn status_fails_without_lockfile() {
 fn status_works_after_sync() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
     // First sync to create lockfile
-    aps()
-        .arg("sync")
-        .current_dir(&temp)
-        .assert()
-        .success();
+    aps().arg("sync").current_dir(&temp).assert().success();
 
     // Then status should work
-    aps()
-        .arg("status")
-        .current_dir(&temp)
-        .assert()
-        .success();
+    aps().arg("status").current_dir(&temp).assert().success();
 }
 
 // ============================================================================
@@ -304,9 +266,7 @@ fn catalog_generate_fails_without_manifest() {
 fn catalog_generate_creates_catalog_file() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
     aps()
         .args(["catalog", "generate"])
@@ -350,11 +310,7 @@ fn sync_filesystem_source_copies_file() {
 
     temp.child("aps.yaml").write_str(&manifest).unwrap();
 
-    aps()
-        .arg("sync")
-        .current_dir(&temp)
-        .assert()
-        .success();
+    aps().arg("sync").current_dir(&temp).assert().success();
 
     // Verify file was copied
     temp.child("AGENTS.md")
@@ -390,11 +346,7 @@ fn sync_with_symlink_creates_symlink() {
 
     temp.child("aps.yaml").write_str(&manifest).unwrap();
 
-    aps()
-        .arg("sync")
-        .current_dir(&temp)
-        .assert()
-        .success();
+    aps().arg("sync").current_dir(&temp).assert().success();
 
     // Verify symlink was created
     let dest_path = temp.child("AGENTS.md");
@@ -416,9 +368,7 @@ fn sync_with_symlink_creates_symlink() {
 fn verbose_flag_enables_debug_output() {
     let temp = assert_fs::TempDir::new().unwrap();
 
-    temp.child("aps.yaml")
-        .write_str("entries: []\n")
-        .unwrap();
+    temp.child("aps.yaml").write_str("entries: []\n").unwrap();
 
     // With verbose, we should see more output (DEBUG level logs)
     aps()
