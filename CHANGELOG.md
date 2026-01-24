@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.6](https://github.com/westonplatter/agentic-prompt-sync/compare/aps-v0.1.5...aps-v0.1.6) (2026-01-24)
+
+
+### Features
+
+* Respect locked versions in manifest lock file (like uv.lock) ([#45](https://github.com/westonplatter/agentic-prompt-sync/issues/45)) ([f05a4a3](https://github.com/westonplatter/agentic-prompt-sync/commit/f05a4a314789debfcb6372d35cd91137bd0ed7c5))
+
+
+### Bug Fixes
+
+* linting ([#47](https://github.com/westonplatter/agentic-prompt-sync/issues/47)) ([f915ab6](https://github.com/westonplatter/agentic-prompt-sync/commit/f915ab6502c9ec6e6af7260cf1718c6399136b4b))
+* trigger release-please ([#42](https://github.com/westonplatter/agentic-prompt-sync/issues/42)) ([c5985b8](https://github.com/westonplatter/agentic-prompt-sync/commit/c5985b813d5af2e99bc296c1914cbdde2a3b3f1e))
+
 ## [0.1.5](https://github.com/westonplatter/agentic-prompt-sync/compare/aps-v0.1.4...aps-v0.1.5) (2026-01-23)
 
 
