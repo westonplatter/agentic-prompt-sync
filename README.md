@@ -1,3 +1,5 @@
+<!-- trunk-ignore-all(markdownlint/MD033): Inline HTML used for centered header layout -->
+<!-- trunk-ignore-all(markdownlint/MD041): Heading follows centered div intentionally -->
 <div align="center">
 
 # Agentic Prompt Sync (aps)
