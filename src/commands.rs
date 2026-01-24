@@ -147,6 +147,7 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
         dry_run: args.dry_run,
         yes: args.yes,
         strict: args.strict,
+        upgrade: args.upgrade,
     };
 
     // Detect orphaned paths (destinations that changed)
@@ -201,6 +202,8 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
         .map(|r| {
             let status = if !r.warnings.is_empty() {
                 SyncStatus::Warning
+            } else if r.skipped_no_change && r.upgrade_available.is_some() {
+                SyncStatus::Upgradable
             } else if r.skipped_no_change {
                 SyncStatus::Current
             } else if r.was_symlink {
@@ -218,6 +221,15 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
             // Add warning message if present
             if !r.warnings.is_empty() {
                 item = item.with_message(r.warnings.join(", "));
+            }
+
+            // Add upgrade info message if available
+            if let Some(ref upgrade_info) = r.upgrade_available {
+                let current_short =
+                    &upgrade_info.current_commit[..8.min(upgrade_info.current_commit.len())];
+                let available_short =
+                    &upgrade_info.available_commit[..8.min(upgrade_info.available_commit.len())];
+                item = item.with_message(format!("{} → {}", current_short, available_short));
             }
 
             item
@@ -240,6 +252,10 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
         .iter()
         .filter(|i| i.status == SyncStatus::Current)
         .count();
+    let upgradable_count = display_items
+        .iter()
+        .filter(|i| i.status == SyncStatus::Upgradable)
+        .count();
     let warning_count = display_items
         .iter()
         .filter(|i| i.status == SyncStatus::Warning)
@@ -250,6 +266,7 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
         synced_count,
         copied_count,
         current_count,
+        upgradable_count,
         warning_count,
         orphan_count,
         args.dry_run,

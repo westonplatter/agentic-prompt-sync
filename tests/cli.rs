@@ -423,3 +423,366 @@ fn duplicate_entry_ids_detected() {
         .failure()
         .stderr(predicate::str::contains("Duplicate"));
 }
+
+// ============================================================================
+// Upgrade Flag Tests (Lock-Respecting Behavior)
+// ============================================================================
+
+/// Helper to run a git command in a directory
+fn git(dir: &std::path::Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.current_dir(dir);
+    cmd
+}
+
+/// Helper to create a local git repo with an initial commit
+fn create_git_repo_with_agents_md(dir: &std::path::Path, content: &str) {
+    // Initialize git repo with main as default branch
+    git(dir)
+        .args(["init", "--initial-branch=main"])
+        .output()
+        .expect("Failed to init git repo");
+
+    // Configure git user for commits
+    git(dir)
+        .args(["config", "user.email", "test@test.com"])
+        .output()
+        .expect("Failed to configure git email");
+    git(dir)
+        .args(["config", "user.name", "Test User"])
+        .output()
+        .expect("Failed to configure git name");
+
+    // Disable GPG signing for test commits
+    git(dir)
+        .args(["config", "commit.gpgsign", "false"])
+        .output()
+        .expect("Failed to disable gpg signing");
+
+    // Create AGENTS.md
+    std::fs::write(dir.join("AGENTS.md"), content).expect("Failed to write AGENTS.md");
+
+    // Add and commit
+    git(dir)
+        .args(["add", "AGENTS.md"])
+        .output()
+        .expect("Failed to git add");
+    git(dir)
+        .args(["commit", "--no-gpg-sign", "-m", "Initial commit"])
+        .output()
+        .expect("Failed to git commit");
+}
+
+/// Helper to update AGENTS.md and create a new commit
+fn update_agents_md_in_repo(dir: &std::path::Path, new_content: &str) {
+    std::fs::write(dir.join("AGENTS.md"), new_content).expect("Failed to write AGENTS.md");
+
+    git(dir)
+        .args(["add", "AGENTS.md"])
+        .output()
+        .expect("Failed to git add");
+    git(dir)
+        .args(["commit", "--no-gpg-sign", "-m", "Update AGENTS.md"])
+        .output()
+        .expect("Failed to git commit");
+}
+
+#[test]
+fn sync_without_upgrade_respects_locked_commit() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create a "remote" git repo (local directory acting as remote)
+    let source_repo = temp.child("source-repo");
+    source_repo.create_dir_all().unwrap();
+    create_git_repo_with_agents_md(source_repo.path(), "# Version 1\nOriginal content\n");
+
+    // Create project directory with manifest pointing to local git repo
+    let project = temp.child("project");
+    project.create_dir_all().unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: test-agents
+    kind: agents_md
+    source:
+      type: git
+      repo: {}
+      ref: main
+      shallow: false
+      path: AGENTS.md
+    dest: ./AGENTS.md
+"#,
+        source_repo.path().display()
+    );
+
+    project.child("aps.yaml").write_str(&manifest).unwrap();
+
+    // First sync - should install version 1
+    aps().arg("sync").current_dir(&project).assert().success();
+
+    // Verify version 1 is installed
+    project
+        .child("AGENTS.md")
+        .assert(predicate::str::contains("Version 1"));
+
+    // Update the source repo with new content (version 2)
+    update_agents_md_in_repo(source_repo.path(), "# Version 2\nUpdated content\n");
+
+    // Sync WITHOUT --upgrade - should NOT update (respects locked commit)
+    aps().arg("sync").current_dir(&project).assert().success();
+
+    // Verify still has version 1 (locked version respected)
+    project
+        .child("AGENTS.md")
+        .assert(predicate::str::contains("Version 1"));
+    project
+        .child("AGENTS.md")
+        .assert(predicate::str::contains("Version 2").not());
+}
+
+#[test]
+fn sync_with_upgrade_fetches_latest_version() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create a "remote" git repo
+    let source_repo = temp.child("source-repo");
+    source_repo.create_dir_all().unwrap();
+    create_git_repo_with_agents_md(source_repo.path(), "# Version 1\nOriginal content\n");
+
+    // Create project directory with manifest
+    let project = temp.child("project");
+    project.create_dir_all().unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: test-agents
+    kind: agents_md
+    source:
+      type: git
+      repo: {}
+      ref: main
+      shallow: false
+      path: AGENTS.md
+    dest: ./AGENTS.md
+"#,
+        source_repo.path().display()
+    );
+
+    project.child("aps.yaml").write_str(&manifest).unwrap();
+
+    // First sync - install version 1
+    aps().arg("sync").current_dir(&project).assert().success();
+
+    // Verify version 1
+    project
+        .child("AGENTS.md")
+        .assert(predicate::str::contains("Version 1"));
+
+    // Update the source repo
+    update_agents_md_in_repo(source_repo.path(), "# Version 2\nUpdated content\n");
+
+    // Sync WITH --upgrade - should update to version 2
+    aps()
+        .args(["sync", "--upgrade", "--yes"])
+        .current_dir(&project)
+        .assert()
+        .success();
+
+    // Verify version 2 is now installed
+    project
+        .child("AGENTS.md")
+        .assert(predicate::str::contains("Version 2"));
+}
+
+#[test]
+fn sync_shows_upgrade_available_status() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create a "remote" git repo
+    let source_repo = temp.child("source-repo");
+    source_repo.create_dir_all().unwrap();
+    create_git_repo_with_agents_md(source_repo.path(), "# Version 1\n");
+
+    // Create project directory with manifest
+    let project = temp.child("project");
+    project.create_dir_all().unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: test-agents
+    kind: agents_md
+    source:
+      type: git
+      repo: {}
+      ref: main
+      shallow: false
+      path: AGENTS.md
+    dest: ./AGENTS.md
+"#,
+        source_repo.path().display()
+    );
+
+    project.child("aps.yaml").write_str(&manifest).unwrap();
+
+    // First sync
+    aps().arg("sync").current_dir(&project).assert().success();
+
+    // Update the source repo
+    update_agents_md_in_repo(source_repo.path(), "# Version 2\n");
+
+    // Sync without upgrade - should show "upgrade available" message
+    aps()
+        .arg("sync")
+        .current_dir(&project)
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("upgrade available")
+                .or(predicate::str::contains("upgrades available")),
+        );
+}
+
+// ============================================================================
+// Composite Agents MD Tests (Live Git Sources)
+// ============================================================================
+
+#[test]
+fn sync_composite_agents_md_from_git_sources() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create manifest with composite_agents_md using real git sources
+    let manifest = r#"entries:
+  - id: composite-test
+    kind: composite_agents_md
+    sources:
+      - type: git
+        repo: https://github.com/westonplatter/agentically.git
+        ref: main
+        path: agents-md-partials/AGENTS.docker.md
+      - type: git
+        repo: https://github.com/westonplatter/agentically.git
+        ref: main
+        path: agents-md-partials/AGENTS.pandas.md
+    dest: ./AGENTS.md
+"#;
+
+    temp.child("aps.yaml").write_str(manifest).unwrap();
+
+    // Sync should succeed
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Verify the composite file was created
+    let agents_md = temp.child("AGENTS.md");
+    agents_md.assert(predicate::path::exists());
+
+    // Verify content from both sources is present
+    agents_md.assert(predicate::str::contains(
+        "auto-generated by agentic-prompt-sync",
+    ));
+    // Docker content should be present (check for something unique to that file)
+    agents_md.assert(predicate::str::contains("docker").or(predicate::str::contains("Docker")));
+    // Pandas content should be present
+    agents_md.assert(predicate::str::contains("pandas").or(predicate::str::contains("Pandas")));
+
+    // Verify lockfile was created with proper structure
+    let lockfile = temp.child("aps.manifest.lock");
+    lockfile.assert(predicate::path::exists());
+
+    // Verify the lockfile has composite structure (not a string)
+    lockfile.assert(predicate::str::contains("composite:"));
+    lockfile.assert(predicate::str::contains(
+        "- https://github.com/westonplatter/agentically.git:agents-md-partials/AGENTS.docker.md",
+    ));
+    lockfile.assert(predicate::str::contains(
+        "- https://github.com/westonplatter/agentically.git:agents-md-partials/AGENTS.pandas.md",
+    ));
+}
+
+#[test]
+fn sync_composite_agents_md_lockfile_is_valid_yaml() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    let manifest = r#"entries:
+  - id: composite-test
+    kind: composite_agents_md
+    sources:
+      - type: git
+        repo: https://github.com/westonplatter/agentically.git
+        ref: main
+        path: agents-md-partials/AGENTS.docker.md
+      - type: git
+        repo: https://github.com/westonplatter/agentically.git
+        ref: main
+        path: agents-md-partials/AGENTS.pandas.md
+    dest: ./AGENTS.md
+"#;
+
+    temp.child("aps.yaml").write_str(manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Read the lockfile and verify it can be re-parsed by aps status
+    aps().arg("status").current_dir(&temp).assert().success();
+
+    // Verify status output shows composite source correctly
+    aps()
+        .arg("status")
+        .current_dir(&temp)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("composite"))
+        .stdout(predicate::str::contains("AGENTS.docker.md"))
+        .stdout(predicate::str::contains("AGENTS.pandas.md"));
+}
+
+#[test]
+fn sync_composite_agents_md_respects_locked_version() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    let manifest = r#"entries:
+  - id: composite-test
+    kind: composite_agents_md
+    sources:
+      - type: git
+        repo: https://github.com/westonplatter/agentically.git
+        ref: main
+        path: agents-md-partials/AGENTS.docker.md
+      - type: git
+        repo: https://github.com/westonplatter/agentically.git
+        ref: main
+        path: agents-md-partials/AGENTS.pandas.md
+    dest: ./AGENTS.md
+"#;
+
+    temp.child("aps.yaml").write_str(manifest).unwrap();
+
+    // First sync
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Get the checksum from first sync
+    let lockfile_content = std::fs::read_to_string(temp.child("aps.manifest.lock").path()).unwrap();
+    let first_checksum = lockfile_content
+        .lines()
+        .find(|l| l.contains("checksum:"))
+        .unwrap()
+        .to_string();
+
+    // Second sync should show [current] (no changes)
+    aps()
+        .arg("sync")
+        .current_dir(&temp)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[current]"));
+
+    // Verify checksum hasn't changed
+    let lockfile_content_after =
+        std::fs::read_to_string(temp.child("aps.manifest.lock").path()).unwrap();
+    let second_checksum = lockfile_content_after
+        .lines()
+        .find(|l| l.contains("checksum:"))
+        .unwrap()
+        .to_string();
+
+    assert_eq!(first_checksum, second_checksum);
+}

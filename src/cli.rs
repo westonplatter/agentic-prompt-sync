@@ -79,6 +79,13 @@ pub struct SyncArgs {
     /// Treat warnings as errors (e.g., missing SKILL.md)
     #[arg(long)]
     pub strict: bool,
+
+    /// Upgrade to latest versions from sources (ignore locked versions)
+    ///
+    /// By default, `aps sync` respects locked versions from aps.manifest.lock.
+    /// Use --upgrade to fetch the latest versions and update the lockfile.
+    #[arg(long, short = 'u')]
+    pub upgrade: bool,
 }
 
 #[derive(Parser, Debug)]

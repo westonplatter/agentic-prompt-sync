@@ -203,6 +203,35 @@ impl Source {
             Source::Filesystem { .. } => None,
         }
     }
+
+    /// Get the path within a git source (for cloning at specific commits)
+    pub fn git_path(&self) -> Option<&str> {
+        match self {
+            Source::Git { path, .. } => path.as_deref(),
+            Source::Filesystem { .. } => None,
+        }
+    }
+
+    /// Get a display-friendly path string that preserves shell variables like $HOME
+    /// This is used for lockfile source fields to keep paths human-readable
+    pub fn display_path(&self) -> String {
+        match self {
+            Source::Git { repo, path, .. } => {
+                if let Some(p) = path {
+                    format!("{}:{}", repo, p)
+                } else {
+                    repo.clone()
+                }
+            }
+            Source::Filesystem { root, path, .. } => {
+                if let Some(p) = path {
+                    format!("{}/{}", root, p)
+                } else {
+                    root.clone()
+                }
+            }
+        }
+    }
 }
 
 /// Discover and load a manifest
