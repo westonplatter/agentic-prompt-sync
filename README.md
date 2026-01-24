@@ -1,8 +1,20 @@
+<div align="center">
+
 # Agentic Prompt Sync (aps)
 
-Use `aps` to compose and sync your own custom collection of agentic prompts/skills/etc.
+**Compose and sync your own custom collection of agentic prompts/skills/etc.**
+
+[![CI](https://github.com/westonplatter/agentic-prompt-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/westonplatter/agentic-prompt-sync/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/aps?style=flat-square)](https://crates.io/crates/aps)
+[![Downloads](https://img.shields.io/crates/d/aps?style=flat-square)](https://crates.io/crates/aps)
+[![GitHub stars](https://img.shields.io/github/stars/westonplatter/agentic-prompt-sync?style=flat-square)](https://github.com/westonplatter/agentic-prompt-sync/stargazers)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
+
+**Cross-platform support:** macOS • Linux • Windows
 
 ![Example of running ap sync](./docs/aps-example.png)
+
+</div>
 
 ## Features
 
