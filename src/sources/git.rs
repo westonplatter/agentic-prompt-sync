@@ -204,6 +204,83 @@ fn get_head_commit(repo_path: &Path) -> Result<String> {
     Ok(sha)
 }
 
+/// Clone a git repository at a specific commit SHA.
+/// This is used when respecting locked versions from the lockfile.
+pub fn clone_at_commit(
+    url: &str,
+    commit_sha: &str,
+    resolved_ref: &str,
+) -> Result<ResolvedGitSource> {
+    info!(
+        "Cloning git repository at locked commit: {} @ {}",
+        url,
+        &commit_sha[..8.min(commit_sha.len())]
+    );
+
+    // Create temp directory for the clone
+    let temp_dir = TempDir::new()
+        .map_err(|e| ApsError::io(e, "Failed to create temp directory for git clone"))?;
+
+    let repo_path = temp_dir.path().to_path_buf();
+
+    // Clone with no checkout first, then fetch the specific commit
+    // This approach works even if the commit is not at a branch head
+    let mut cmd = Command::new("git");
+    cmd.arg("clone")
+        .arg("--no-checkout")
+        .arg(url)
+        .arg(&repo_path);
+
+    debug!("Running: git clone --no-checkout {}", url);
+
+    let output = cmd.output().map_err(|e| ApsError::GitError {
+        message: format!("Failed to execute git command: {}", e),
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ApsError::GitError {
+            message: format!("Failed to clone repository: {}", stderr.trim()),
+        });
+    }
+
+    // Checkout the specific commit
+    let checkout_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_path)
+        .arg("checkout")
+        .arg(commit_sha)
+        .output()
+        .map_err(|e| ApsError::GitError {
+            message: format!("Failed to execute git checkout: {}", e),
+        })?;
+
+    if !checkout_output.status.success() {
+        let stderr = String::from_utf8_lossy(&checkout_output.stderr);
+        return Err(ApsError::GitError {
+            message: format!(
+                "Failed to checkout commit {}: {}",
+                &commit_sha[..8.min(commit_sha.len())],
+                stderr.trim()
+            ),
+        });
+    }
+
+    info!(
+        "Cloned {} at locked commit {} (ref was '{}')",
+        url,
+        &commit_sha[..8.min(commit_sha.len())],
+        resolved_ref
+    );
+
+    Ok(ResolvedGitSource {
+        _temp_dir: temp_dir,
+        repo_path,
+        resolved_ref: resolved_ref.to_string(),
+        commit_sha: commit_sha.to_string(),
+    })
+}
+
 /// Get the commit SHA for a ref from a remote repository without cloning.
 /// Uses `git ls-remote` which is much faster than a full clone.
 pub fn get_remote_commit_sha(url: &str, git_ref: &str) -> Result<Option<String>> {

@@ -6,7 +6,7 @@ use crate::compose::{
 use crate::error::{ApsError, Result};
 use crate::lockfile::{LockedEntry, Lockfile};
 use crate::manifest::{AssetKind, Entry};
-use crate::sources::get_remote_commit_sha;
+use crate::sources::{clone_at_commit, get_remote_commit_sha, GitInfo, ResolvedSource};
 use dialoguer::Confirm;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -29,6 +29,9 @@ pub struct InstallOptions {
     pub dry_run: bool,
     pub yes: bool,
     pub strict: bool,
+    /// When true, fetch latest versions from sources (ignore locked versions)
+    /// When false (default), respect locked versions from the lockfile
+    pub upgrade: bool,
 }
 
 /// Result of an install operation
@@ -41,6 +44,15 @@ pub struct InstallResult {
     pub warnings: Vec<String>,
     pub dest_path: PathBuf,
     pub was_symlink: bool,
+    /// Whether a newer version is available (for git sources in locked mode)
+    pub upgrade_available: Option<UpgradeInfo>,
+}
+
+/// Information about an available upgrade
+#[derive(Debug, Clone)]
+pub struct UpgradeInfo {
+    pub current_commit: String,
+    pub available_commit: String,
 }
 
 /// Install a single entry
@@ -60,48 +72,128 @@ pub fn install_entry(
             id: entry.id.clone(),
         })?;
 
-    // For git sources, check if remote commit matches lockfile before cloning
-    // This is much faster than cloning and comparing checksums
-    if let Some((repo, git_ref)) = source.git_info() {
+    // For git sources, handle locked vs upgrade mode
+    let resolved = if let Some((repo, git_ref)) = source.git_info() {
         let dest_path = manifest_dir.join(entry.destination());
+        let locked_entry = lockfile.entries.get(&entry.id);
 
-        // Only skip if destination exists - if it doesn't, we need to install
-        if dest_path.exists() {
-            debug!("Checking remote commit for {} ({})", repo, git_ref);
-            if let Ok(Some(remote_sha)) = get_remote_commit_sha(repo, git_ref) {
-                if lockfile.commit_matches(&entry.id, &remote_sha) {
-                    info!(
-                        "Entry {} is up to date (commit {} unchanged)",
+        // Check if we should use the locked commit
+        let use_locked_commit = !options.upgrade
+            && locked_entry
+                .and_then(|e| e.commit.as_ref())
+                .is_some();
+
+        if use_locked_commit {
+            let locked = locked_entry.unwrap();
+            let locked_commit = locked.commit.as_ref().unwrap();
+            let locked_ref = locked.resolved_ref.as_deref().unwrap_or("unknown");
+
+            // Check if there's a newer version available on the remote
+            let upgrade_available = match get_remote_commit_sha(repo, git_ref) {
+                Ok(Some(remote_sha)) if remote_sha != *locked_commit => {
+                    debug!(
+                        "Upgrade available for {}: {} -> {}",
                         entry.id,
+                        &locked_commit[..8.min(locked_commit.len())],
                         &remote_sha[..8.min(remote_sha.len())]
                     );
-                    // Get was_symlink from lockfile if available
-                    let was_symlink = lockfile
-                        .entries
-                        .get(&entry.id)
-                        .map(|e| e.is_symlink)
-                        .unwrap_or(false);
-                    return Ok(InstallResult {
-                        id: entry.id.clone(),
-                        installed: false,
-                        skipped_no_change: true,
-                        locked_entry: None,
-                        warnings: Vec::new(),
-                        dest_path: dest_path.clone(),
-                        was_symlink,
-                    });
+                    Some(UpgradeInfo {
+                        current_commit: locked_commit.clone(),
+                        available_commit: remote_sha,
+                    })
                 }
-                debug!(
-                    "Remote commit {} differs from lockfile, will clone",
-                    &remote_sha[..8.min(remote_sha.len())]
-                );
-            }
-        }
-    }
+                _ => None,
+            };
 
-    // Convert source to adapter and resolve
-    let adapter = source.to_adapter();
-    let resolved = adapter.resolve(manifest_dir)?;
+            // If destination exists and commit matches, we're up to date
+            if dest_path.exists() {
+                info!(
+                    "Entry {} is up to date (using locked commit {})",
+                    entry.id,
+                    &locked_commit[..8.min(locked_commit.len())]
+                );
+                let was_symlink = locked.is_symlink;
+                return Ok(InstallResult {
+                    id: entry.id.clone(),
+                    installed: false,
+                    skipped_no_change: true,
+                    locked_entry: None,
+                    warnings: Vec::new(),
+                    dest_path: dest_path.clone(),
+                    was_symlink,
+                    upgrade_available,
+                });
+            }
+
+            // Clone at the locked commit
+            info!(
+                "Installing {} from locked commit {}",
+                entry.id,
+                &locked_commit[..8.min(locked_commit.len())]
+            );
+            let resolved_git = clone_at_commit(repo, locked_commit, locked_ref)?;
+
+            // Build the path within the cloned repo
+            let path = source
+                .git_path()
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| ".".to_string());
+            let source_path = if path == "." {
+                resolved_git.repo_path.clone()
+            } else {
+                resolved_git.repo_path.join(&path)
+            };
+
+            let git_info = GitInfo {
+                resolved_ref: resolved_git.resolved_ref.clone(),
+                commit_sha: resolved_git.commit_sha.clone(),
+            };
+
+            ResolvedSource::git(source_path, repo.to_string(), git_info, resolved_git)
+        } else {
+            // Upgrade mode or no locked commit: check remote and clone latest
+            // Fast-path: skip if remote commit matches lockfile and dest exists
+            if dest_path.exists() {
+                debug!("Checking remote commit for {} ({})", repo, git_ref);
+                if let Ok(Some(remote_sha)) = get_remote_commit_sha(repo, git_ref) {
+                    if lockfile.commit_matches(&entry.id, &remote_sha) {
+                        info!(
+                            "Entry {} is up to date (commit {} unchanged)",
+                            entry.id,
+                            &remote_sha[..8.min(remote_sha.len())]
+                        );
+                        let was_symlink = lockfile
+                            .entries
+                            .get(&entry.id)
+                            .map(|e| e.is_symlink)
+                            .unwrap_or(false);
+                        return Ok(InstallResult {
+                            id: entry.id.clone(),
+                            installed: false,
+                            skipped_no_change: true,
+                            locked_entry: None,
+                            warnings: Vec::new(),
+                            dest_path: dest_path.clone(),
+                            was_symlink,
+                            upgrade_available: None,
+                        });
+                    }
+                    debug!(
+                        "Remote commit {} differs from lockfile, will clone latest",
+                        &remote_sha[..8.min(remote_sha.len())]
+                    );
+                }
+            }
+
+            // Clone latest from branch
+            let adapter = source.to_adapter();
+            adapter.resolve(manifest_dir)?
+        }
+    } else {
+        // Non-git source (filesystem): use adapter directly
+        let adapter = source.to_adapter();
+        adapter.resolve(manifest_dir)?
+    };
     debug!("Source path: {:?}", resolved.source_path);
 
     // Verify source exists
@@ -177,6 +269,7 @@ pub fn install_entry(
                 warnings: Vec::new(),
                 dest_path: dest_path.clone(),
                 was_symlink,
+                upgrade_available: None,
             });
         } else {
             debug!(
@@ -265,6 +358,7 @@ pub fn install_entry(
         warnings,
         dest_path,
         was_symlink: resolved.use_symlink,
+        upgrade_available: None,
     })
 }
 
@@ -335,6 +429,7 @@ pub fn install_composite_entry(
             warnings: Vec::new(),
             dest_path: dest_path.clone(),
             was_symlink: false,
+            upgrade_available: None,
         });
     }
 
@@ -399,6 +494,7 @@ pub fn install_composite_entry(
         warnings: Vec::new(),
         dest_path,
         was_symlink: false,
+        upgrade_available: None,
     })
 }
 

@@ -203,6 +203,14 @@ impl Source {
             Source::Filesystem { .. } => None,
         }
     }
+
+    /// Get the path within a git source (for cloning at specific commits)
+    pub fn git_path(&self) -> Option<&str> {
+        match self {
+            Source::Git { path, .. } => path.as_deref(),
+            Source::Filesystem { .. } => None,
+        }
+    }
 }
 
 /// Discover and load a manifest

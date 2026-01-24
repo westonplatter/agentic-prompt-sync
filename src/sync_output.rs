@@ -10,6 +10,8 @@ pub enum SyncStatus {
     Copied,
     /// Entry is already current (no changes needed)
     Current,
+    /// Entry is current but has an upgrade available
+    Upgradable,
     /// Entry had warnings during sync
     Warning,
     /// Entry failed to sync (reserved for future use)
@@ -91,6 +93,7 @@ pub fn print_sync_results(items: &[SyncDisplayItem], manifest_path: &Path, dry_r
     let green = Style::new().green();
     let dim = Style::new().dim();
     let yellow = Style::new().yellow();
+    let orange = Style::new().color256(208); // Orange color for upgradable
     let red = Style::new().red();
 
     // Calculate column widths for alignment
@@ -108,6 +111,7 @@ pub fn print_sync_results(items: &[SyncDisplayItem], manifest_path: &Path, dry_r
                 SyncStatus::Synced => ("✓", &green, "[synced]", &green),
                 SyncStatus::Copied => ("✓", &green, "[copied]", &green),
                 SyncStatus::Current => ("·", &dim, "[current]", &dim),
+                SyncStatus::Upgradable => ("↑", &orange, "[upgrade available]", &orange),
                 SyncStatus::Warning => ("!", &yellow, "[warning]", &yellow),
                 SyncStatus::Error => ("✗", &red, "[error]", &red),
             };
@@ -117,6 +121,7 @@ pub fn print_sync_results(items: &[SyncDisplayItem], manifest_path: &Path, dry_r
         // Format: "  ✓ entry-id         → ./dest/path     [synced]"
         let id_style = match item.status {
             SyncStatus::Current => Style::new().dim(),
+            SyncStatus::Upgradable => Style::new().color256(208),
             SyncStatus::Warning => Style::new().yellow(),
             SyncStatus::Error => Style::new().red(),
             _ => Style::new().white(),
@@ -133,9 +138,10 @@ pub fn print_sync_results(items: &[SyncDisplayItem], manifest_path: &Path, dry_r
             width_dest = max_dest_len,
         );
 
-        // Print message if present (for warnings/errors)
+        // Print message if present (for warnings/errors/upgrades)
         if let Some(ref msg) = item.message {
             let msg_style = match item.status {
+                SyncStatus::Upgradable => &orange,
                 SyncStatus::Warning => &yellow,
                 SyncStatus::Error => &red,
                 _ => &dim,
@@ -152,12 +158,14 @@ pub fn print_sync_summary(
     synced_count: usize,
     copied_count: usize,
     current_count: usize,
+    upgradable_count: usize,
     warning_count: usize,
     orphan_count: usize,
     dry_run: bool,
 ) {
     let green = Style::new().green();
     let dim = Style::new().dim();
+    let orange = Style::new().color256(208);
     let yellow = Style::new().yellow();
 
     let mut parts = Vec::new();
@@ -197,6 +205,18 @@ pub fn print_sync_summary(
         }
     }
 
+    if upgradable_count > 0 {
+        parts.push(format!(
+            "{} {}",
+            orange.apply_to(upgradable_count),
+            orange.apply_to(if upgradable_count == 1 {
+                "upgrade available"
+            } else {
+                "upgrades available"
+            })
+        ));
+    }
+
     if warning_count > 0 {
         parts.push(format!(
             "{} {}",
@@ -219,6 +239,14 @@ pub fn print_sync_summary(
 
     if !parts.is_empty() {
         println!("{}", parts.join(", "));
+    }
+
+    // Print upgrade hint if there are upgradable entries
+    if upgradable_count > 0 {
+        println!(
+            "\n{}",
+            dim.apply_to("Run `aps sync --upgrade` to update to latest versions.")
+        );
     }
 }
 
