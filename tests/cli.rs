@@ -823,3 +823,398 @@ entries: {}
     temp.child("aps.manifest.lock")
         .assert(predicate::path::missing());
 }
+
+// ============================================================================
+// Claude Settings Tests
+// ============================================================================
+
+#[test]
+fn sync_claude_settings_single_source() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create a permission fragment file
+    let perms_dir = temp.child("perms");
+    perms_dir.create_dir_all().unwrap();
+    perms_dir
+        .child("base.yaml")
+        .write_str(
+            r#"allow:
+  - "Bash(cat:*)"
+  - "Bash(ls:*)"
+  - "WebSearch"
+"#,
+        )
+        .unwrap();
+
+    // Create manifest
+    let manifest = format!(
+        r#"entries:
+  - id: claude-perms
+    kind: claude_settings
+    sources:
+      - type: filesystem
+        root: {}
+        path: base.yaml
+    dest: .claude/settings.json
+"#,
+        perms_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Verify settings.json was created
+    let settings = temp.child(".claude/settings.json");
+    settings.assert(predicate::path::exists());
+
+    // Verify JSON content
+    settings.assert(predicate::str::contains("\"permissions\""));
+    settings.assert(predicate::str::contains("\"allow\""));
+    settings.assert(predicate::str::contains("Bash(cat:*)"));
+    settings.assert(predicate::str::contains("Bash(ls:*)"));
+    settings.assert(predicate::str::contains("WebSearch"));
+}
+
+#[test]
+fn sync_claude_settings_multiple_sources_compose() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create two permission fragment files
+    let perms_dir = temp.child("perms");
+    perms_dir.create_dir_all().unwrap();
+
+    perms_dir
+        .child("shared.yaml")
+        .write_str(
+            r#"allow:
+  - "Bash(git checkout:*)"
+  - "Bash(git fetch:*)"
+  - "WebSearch"
+"#,
+        )
+        .unwrap();
+
+    perms_dir
+        .child("local.yaml")
+        .write_str(
+            r#"allow:
+  - "Bash(cat:*)"
+  - "Bash(ls:*)"
+  - "Bash(find:*)"
+  - "WebFetch(domain:github.com)"
+"#,
+        )
+        .unwrap();
+
+    // Create manifest with multiple sources
+    let manifest = format!(
+        r#"entries:
+  - id: claude-perms
+    kind: claude_settings
+    sources:
+      - type: filesystem
+        root: {dir}
+        path: shared.yaml
+      - type: filesystem
+        root: {dir}
+        path: local.yaml
+    dest: .claude/settings.json
+"#,
+        dir = perms_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Verify settings.json was created with merged permissions
+    let settings = temp.child(".claude/settings.json");
+    settings.assert(predicate::path::exists());
+
+    // Read the content and parse as JSON
+    let content = std::fs::read_to_string(settings.path()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    let allow = parsed["permissions"]["allow"].as_array().unwrap();
+    // Should contain union of both files (7 unique entries)
+    assert_eq!(allow.len(), 7);
+
+    // Should be sorted alphabetically
+    assert_eq!(allow[0], "Bash(cat:*)");
+    assert_eq!(allow[1], "Bash(find:*)");
+    assert_eq!(allow[2], "Bash(git checkout:*)");
+    assert_eq!(allow[3], "Bash(git fetch:*)");
+    assert_eq!(allow[4], "Bash(ls:*)");
+    assert_eq!(allow[5], "WebFetch(domain:github.com)");
+    assert_eq!(allow[6], "WebSearch");
+}
+
+#[test]
+fn sync_claude_settings_deny_removes_from_allow() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    let perms_dir = temp.child("perms");
+    perms_dir.create_dir_all().unwrap();
+
+    // Allow fragment
+    perms_dir
+        .child("allow.yaml")
+        .write_str(
+            r#"allow:
+  - "Bash(cat:*)"
+  - "Bash(curl:*)"
+  - "Bash(ls:*)"
+  - "WebSearch"
+"#,
+        )
+        .unwrap();
+
+    // Deny fragment
+    perms_dir
+        .child("deny.yaml")
+        .write_str(
+            r#"deny:
+  - "Bash(curl:*)"
+"#,
+        )
+        .unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: claude-perms
+    kind: claude_settings
+    sources:
+      - type: filesystem
+        root: {dir}
+        path: allow.yaml
+      - type: filesystem
+        root: {dir}
+        path: deny.yaml
+    dest: .claude/settings.json
+"#,
+        dir = perms_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Read and parse JSON
+    let content =
+        std::fs::read_to_string(temp.child(".claude/settings.json").path()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    let allow = parsed["permissions"]["allow"].as_array().unwrap();
+    // curl should be removed from allow (it's in deny)
+    assert_eq!(allow.len(), 3);
+    assert!(!allow.iter().any(|v| v == "Bash(curl:*)"));
+
+    // deny list should contain curl
+    let deny = parsed["permissions"]["deny"].as_array().unwrap();
+    assert_eq!(deny.len(), 1);
+    assert_eq!(deny[0], "Bash(curl:*)");
+}
+
+#[test]
+fn sync_claude_settings_deduplicates() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    let perms_dir = temp.child("perms");
+    perms_dir.create_dir_all().unwrap();
+
+    // Both files have overlapping permissions
+    perms_dir
+        .child("a.yaml")
+        .write_str(
+            r#"allow:
+  - "Bash(cat:*)"
+  - "WebSearch"
+"#,
+        )
+        .unwrap();
+
+    perms_dir
+        .child("b.yaml")
+        .write_str(
+            r#"allow:
+  - "WebSearch"
+  - "Bash(ls:*)"
+"#,
+        )
+        .unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: claude-perms
+    kind: claude_settings
+    sources:
+      - type: filesystem
+        root: {dir}
+        path: a.yaml
+      - type: filesystem
+        root: {dir}
+        path: b.yaml
+    dest: .claude/settings.json
+"#,
+        dir = perms_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    let content =
+        std::fs::read_to_string(temp.child(".claude/settings.json").path()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    let allow = parsed["permissions"]["allow"].as_array().unwrap();
+    // WebSearch should appear only once (deduped)
+    assert_eq!(allow.len(), 3);
+}
+
+#[test]
+fn sync_claude_settings_idempotent() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    let perms_dir = temp.child("perms");
+    perms_dir.create_dir_all().unwrap();
+
+    perms_dir
+        .child("perms.yaml")
+        .write_str(
+            r#"allow:
+  - "Bash(cat:*)"
+  - "WebSearch"
+"#,
+        )
+        .unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: claude-perms
+    kind: claude_settings
+    sources:
+      - type: filesystem
+        root: {}
+        path: perms.yaml
+    dest: .claude/settings.json
+"#,
+        perms_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    // First sync
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Second sync should show [current] (no changes)
+    aps()
+        .arg("sync")
+        .current_dir(&temp)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[current]"));
+}
+
+#[test]
+fn sync_claude_settings_default_destination() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    let perms_dir = temp.child("perms");
+    perms_dir.create_dir_all().unwrap();
+
+    perms_dir
+        .child("perms.yaml")
+        .write_str(
+            r#"allow:
+  - "WebSearch"
+"#,
+        )
+        .unwrap();
+
+    // No dest specified - should default to .claude/settings.json
+    let manifest = format!(
+        r#"entries:
+  - id: claude-perms
+    kind: claude_settings
+    sources:
+      - type: filesystem
+        root: {}
+        path: perms.yaml
+"#,
+        perms_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Default destination is .claude/settings.json
+    temp.child(".claude/settings.json")
+        .assert(predicate::path::exists());
+}
+
+#[test]
+fn validate_claude_settings_entry() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    let perms_dir = temp.child("perms");
+    perms_dir.create_dir_all().unwrap();
+
+    perms_dir
+        .child("perms.yaml")
+        .write_str(
+            r#"allow:
+  - "WebSearch"
+"#,
+        )
+        .unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: claude-perms
+    kind: claude_settings
+    sources:
+      - type: filesystem
+        root: {}
+        path: perms.yaml
+    dest: .claude/settings.json
+"#,
+        perms_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps()
+        .arg("validate")
+        .current_dir(&temp)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("valid"));
+}
+
+#[test]
+fn sync_claude_settings_requires_sources() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // claude_settings with source (singular) instead of sources should fail validation
+    let manifest = r#"entries:
+  - id: claude-perms
+    kind: claude_settings
+    source:
+      type: filesystem
+      root: /tmp
+      path: perms.yaml
+    dest: .claude/settings.json
+"#;
+
+    temp.child("aps.yaml").write_str(manifest).unwrap();
+
+    aps()
+        .arg("validate")
+        .current_dir(&temp)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("sources"));
+}
