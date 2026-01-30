@@ -140,6 +140,26 @@ pub enum ApsError {
     #[error("Failed to compose markdown files: {message}")]
     #[diagnostic(code(aps::compose::error))]
     ComposeError { message: String },
+
+    #[error("Hooks directory should be named 'hooks': {path}")]
+    #[diagnostic(code(aps::hooks::invalid_directory))]
+    InvalidHooksDirectory { path: PathBuf },
+
+    #[error("Hooks config not found at {path}")]
+    #[diagnostic(code(aps::hooks::config_missing))]
+    MissingHooksConfig { path: PathBuf },
+
+    #[error("Invalid hooks config at {path}: {message}")]
+    #[diagnostic(code(aps::hooks::config_invalid))]
+    InvalidHooksConfig { path: PathBuf, message: String },
+
+    #[error("Hooks config at {path} is missing a 'hooks' section")]
+    #[diagnostic(code(aps::hooks::missing_section))]
+    MissingHooksSection { path: PathBuf },
+
+    #[error("Hook script not found: {path}")]
+    #[diagnostic(code(aps::hooks::script_not_found))]
+    HookScriptNotFound { path: PathBuf },
 }
 
 impl ApsError {
