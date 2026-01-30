@@ -4,6 +4,7 @@ use crate::compose::{
     compose_markdown, read_source_file, write_composed_file, ComposeOptions, ComposedSource,
 };
 use crate::error::{ApsError, Result};
+use crate::hooks::{validate_claude_hooks, validate_cursor_hooks};
 use crate::lockfile::{LockedEntry, Lockfile};
 use crate::manifest::{AssetKind, Entry};
 use crate::sources::{clone_at_commit, get_remote_commit_sha, GitInfo, ResolvedSource};
@@ -377,7 +378,11 @@ pub fn install_entry(
     let should_check_conflict = match entry.kind {
         AssetKind::AgentsMd => true,          // Single file - always check
         AssetKind::CompositeAgentsMd => true, // Composite file - always check
-        AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {
+        AssetKind::CursorRules
+        | AssetKind::CursorHooks
+        | AssetKind::CursorSkillsRoot
+        | AssetKind::ClaudeHooks
+        | AssetKind::AgentSkill => {
             // For directory assets with symlinks, we add files to the directory
             // without backing up existing content from other sources
             !resolved.use_symlink
@@ -385,19 +390,55 @@ pub fn install_entry(
     };
 
     if should_check_conflict {
-        let should_proceed = handle_conflict(&dest_path, manifest_dir, options)?;
-        if !should_proceed {
-            // dry-run mode, skip actual installation but continue
+        if matches!(entry.kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+            let mut conflicts = collect_hook_conflicts(&resolved.source_path, &dest_path)?;
+            if let Some((source_config, dest_config)) =
+                hooks_config_paths(&entry.kind, &resolved.source_path, &dest_path)?
+            {
+                if source_config.exists()
+                    && dest_config.exists()
+                    && !dest_config
+                        .symlink_metadata()
+                        .map(|m| m.file_type().is_symlink())
+                        .unwrap_or(false)
+                {
+                    conflicts.push(dest_config);
+                }
+            }
+            conflicts.sort();
+            conflicts.dedup();
+            let should_proceed =
+                handle_partial_conflict(&dest_path, &conflicts, manifest_dir, options)?;
+            if !should_proceed {
+                // dry-run mode, skip actual installation but continue
+            }
+        } else {
+            let should_proceed = handle_conflict(&dest_path, manifest_dir, options)?;
+            if !should_proceed {
+                // dry-run mode, skip actual installation but continue
+            }
         }
     }
 
     // Validate skills if this is a skills root
     let mut warnings = Vec::new();
     if entry.kind == AssetKind::CursorSkillsRoot {
-        warnings = validate_skills_root(&resolved.source_path, options.strict)?;
-        for warning in &warnings {
-            println!("Warning: {}", warning);
-        }
+        warnings.extend(validate_skills_root(&resolved.source_path, options.strict)?);
+    }
+    if entry.kind == AssetKind::CursorHooks {
+        warnings.extend(validate_cursor_hooks(
+            &resolved.source_path,
+            options.strict,
+        )?);
+    }
+    if entry.kind == AssetKind::ClaudeHooks {
+        warnings.extend(validate_claude_hooks(
+            &resolved.source_path,
+            options.strict,
+        )?);
+    }
+    for warning in &warnings {
+        println!("Warning: {}", warning);
     }
 
     // Perform the install
@@ -412,6 +453,18 @@ pub fn install_entry(
             &entry.include,
         )?
     };
+
+    if !options.dry_run && matches!(entry.kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+        sync_hooks_config(
+            &entry.kind,
+            &resolved.source_path,
+            &dest_path,
+            resolved.use_symlink,
+        )?;
+        if !resolved.use_symlink {
+            make_shell_scripts_executable(&dest_path)?;
+        }
+    }
 
     // Create locked entry from resolved source
     let locked_entry = resolved.to_locked_entry(&dest_path, checksum, symlinked_items);
@@ -568,7 +621,11 @@ fn install_asset(
                 message: "Composite entries should use install_composite_entry".to_string(),
             });
         }
-        AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {
+        AssetKind::CursorRules
+        | AssetKind::CursorHooks
+        | AssetKind::CursorSkillsRoot
+        | AssetKind::ClaudeHooks
+        | AssetKind::AgentSkill => {
             if use_symlink {
                 if include.is_empty() {
                     // Symlink individual files (not the directory itself)
@@ -605,23 +662,35 @@ fn install_asset(
             } else {
                 // Copy behavior
                 if include.is_empty() {
-                    copy_directory(source, dest)?;
+                    if matches!(kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+                        copy_directory_merge(source, dest)?;
+                    } else {
+                        copy_directory(source, dest)?;
+                    }
                 } else {
                     // Filter and copy individual items
                     let items = filter_by_prefix(source, include)?;
 
                     // Ensure dest exists
-                    if dest.exists() {
-                        std::fs::remove_dir_all(dest).map_err(|e| {
-                            ApsError::io(
-                                e,
-                                format!("Failed to remove existing directory {:?}", dest),
-                            )
+                    if matches!(kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+                        if !dest.exists() {
+                            std::fs::create_dir_all(dest).map_err(|e| {
+                                ApsError::io(e, format!("Failed to create directory {:?}", dest))
+                            })?;
+                        }
+                    } else {
+                        if dest.exists() {
+                            std::fs::remove_dir_all(dest).map_err(|e| {
+                                ApsError::io(
+                                    e,
+                                    format!("Failed to remove existing directory {:?}", dest),
+                                )
+                            })?;
+                        }
+                        std::fs::create_dir_all(dest).map_err(|e| {
+                            ApsError::io(e, format!("Failed to create directory {:?}", dest))
                         })?;
                     }
-                    std::fs::create_dir_all(dest).map_err(|e| {
-                        ApsError::io(e, format!("Failed to create directory {:?}", dest))
-                    })?;
 
                     for item in items {
                         let item_name = item.file_name().ok_or_else(|| {
@@ -635,7 +704,11 @@ fn install_asset(
                         })?;
                         let item_dest = dest.join(item_name);
                         if item.is_dir() {
-                            copy_directory(&item, &item_dest)?;
+                            if matches!(kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+                                copy_directory_merge(&item, &item_dest)?;
+                            } else {
+                                copy_directory(&item, &item_dest)?;
+                            }
                         } else {
                             std::fs::copy(&item, &item_dest).map_err(|e| {
                                 ApsError::io(e, format!("Failed to copy {:?}", item))

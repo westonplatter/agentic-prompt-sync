@@ -3,6 +3,7 @@ use crate::cli::{
     CatalogGenerateArgs, InitArgs, ManifestFormat, StatusArgs, SyncArgs, ValidateArgs,
 };
 use crate::error::{ApsError, Result};
+use crate::hooks::{validate_claude_hooks, validate_cursor_hooks};
 use crate::install::{install_composite_entry, install_entry, InstallOptions, InstallResult};
 use crate::lockfile::{display_status, Lockfile};
 use crate::manifest::{
@@ -396,6 +397,22 @@ pub fn cmd_validate(args: ValidateArgs) -> Result<()> {
                             args.strict,
                         )?;
                         warnings.extend(skill_warnings);
+                    }
+                    if entry.kind == AssetKind::CursorHooks {
+                        let hook_warnings =
+                            validate_cursor_hooks(&resolved.source_path, args.strict)?;
+                        for warning in &hook_warnings {
+                            println!("       Warning: {}", warning);
+                        }
+                        warnings.extend(hook_warnings);
+                    }
+                    if entry.kind == AssetKind::ClaudeHooks {
+                        let hook_warnings =
+                            validate_claude_hooks(&resolved.source_path, args.strict)?;
+                        for warning in &hook_warnings {
+                            println!("       Warning: {}", warning);
+                        }
+                        warnings.extend(hook_warnings);
                     }
 
                     // Format output based on source type
