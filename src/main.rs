@@ -1,6 +1,7 @@
 mod backup;
 mod catalog;
 mod checksum;
+mod claude_settings;
 mod cli;
 mod commands;
 mod compose;

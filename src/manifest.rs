@@ -69,7 +69,8 @@ impl Entry {
 
     /// Check if this is a composite entry (uses multiple sources)
     pub fn is_composite(&self) -> bool {
-        self.kind == AssetKind::CompositeAgentsMd && !self.sources.is_empty()
+        (self.kind == AssetKind::CompositeAgentsMd || self.kind == AssetKind::ClaudeSettings)
+            && !self.sources.is_empty()
     }
 
     /// Get the destination path for this entry (with shell variable expansion)
@@ -99,6 +100,8 @@ pub enum AssetKind {
     AgentSkill,
     /// Composite AGENTS.md - merge multiple markdown files into one
     CompositeAgentsMd,
+    /// Claude Code settings.json - compose permissions from multiple YAML fragments
+    ClaudeSettings,
 }
 
 impl AssetKind {
@@ -110,6 +113,7 @@ impl AssetKind {
             AssetKind::AgentsMd => PathBuf::from("AGENTS.md"),
             AssetKind::AgentSkill => PathBuf::from(".claude/skills"),
             AssetKind::CompositeAgentsMd => PathBuf::from("AGENTS.md"),
+            AssetKind::ClaudeSettings => PathBuf::from(".claude/settings.json"),
         }
     }
 
@@ -122,6 +126,7 @@ impl AssetKind {
             "agents_md" => Ok(AssetKind::AgentsMd),
             "agent_skill" => Ok(AssetKind::AgentSkill),
             "composite_agents_md" => Ok(AssetKind::CompositeAgentsMd),
+            "claude_settings" => Ok(AssetKind::ClaudeSettings),
             _ => Err(ApsError::InvalidAssetKind {
                 kind: s.to_string(),
             }),
@@ -307,7 +312,9 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<()> {
         }
 
         // Validate source configuration based on kind
-        if entry.kind == AssetKind::CompositeAgentsMd {
+        if entry.kind == AssetKind::CompositeAgentsMd
+            || entry.kind == AssetKind::ClaudeSettings
+        {
             // Composite entries require sources array
             if entry.sources.is_empty() {
                 return Err(ApsError::CompositeRequiresSources {

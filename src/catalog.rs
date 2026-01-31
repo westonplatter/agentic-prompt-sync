@@ -265,6 +265,16 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
                 });
             }
         }
+        AssetKind::ClaudeSettings => {
+            // Claude settings entries use composite sources (handled above for composites)
+            catalog_entries.push(CatalogEntry {
+                id: format!("{}:settings", entry.id),
+                name: "settings.json (composed)".to_string(),
+                kind: AssetKind::ClaudeSettings,
+                destination: format!("./{}", base_dest.display()),
+                short_description: None,
+            });
+        }
     }
 
     Ok(catalog_entries)

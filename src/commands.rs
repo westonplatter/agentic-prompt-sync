@@ -3,7 +3,10 @@ use crate::cli::{
     CatalogGenerateArgs, InitArgs, ManifestFormat, StatusArgs, SyncArgs, ValidateArgs,
 };
 use crate::error::{ApsError, Result};
-use crate::install::{install_composite_entry, install_entry, InstallOptions, InstallResult};
+use crate::install::{
+    install_claude_settings_entry, install_composite_entry, install_entry, InstallOptions,
+    InstallResult,
+};
 use crate::lockfile::{display_status, Lockfile};
 use crate::manifest::{
     discover_manifest, manifest_dir, validate_manifest, AssetKind, Manifest, DEFAULT_MANIFEST_NAME,
@@ -156,8 +159,10 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
     // Install selected entries
     let mut results: Vec<InstallResult> = Vec::new();
     for entry in &entries_to_install {
-        // Use composite install for composite entries, regular install otherwise
-        let result = if entry.is_composite() {
+        // Route to appropriate install function based on entry kind
+        let result = if entry.kind == AssetKind::ClaudeSettings {
+            install_claude_settings_entry(entry, &base_dir, &lockfile, &options)?
+        } else if entry.is_composite() {
             install_composite_entry(entry, &base_dir, &lockfile, &options)?
         } else {
             install_entry(entry, &base_dir, &lockfile, &options)?
