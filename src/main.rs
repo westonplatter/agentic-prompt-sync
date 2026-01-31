@@ -5,6 +5,7 @@ mod cli;
 mod commands;
 mod compose;
 mod error;
+mod hooks;
 mod install;
 mod lockfile;
 mod manifest;

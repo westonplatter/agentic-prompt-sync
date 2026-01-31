@@ -208,7 +208,9 @@ entries:
 | `agents_md`           | Single AGENTS.md file                  | `./AGENTS.md`       |
 | `composite_agents_md` | Merge multiple markdown files into one | `./AGENTS.md`       |
 | `cursor_rules`        | Directory of Cursor rules              | `./.cursor/rules/`  |
+| `cursor_hooks`        | Directory of Cursor hooks              | `./.cursor/hooks/`  |
 | `cursor_skills_root`  | Directory with skill subdirs           | `./.cursor/skills/` |
+| `claude_hooks`        | Directory of Claude hooks              | `./.claude/hooks/`  |
 | `agent_skill`         | Claude agent skill directory           | `./.claude/skills/` |
 
 ### Source Types

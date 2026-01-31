@@ -4,7 +4,9 @@
 //! that are synced via the manifest. Each asset kind is enumerated:
 //! - agents_md: One entry per file
 //! - cursor_rules: One entry per individual rule file
+//! - cursor_hooks: One entry per hook script
 //! - cursor_skills_root: One entry per skill folder
+//! - claude_hooks: One entry per hook script
 //! - agent_skill: One entry per skill folder
 
 use crate::error::{ApsError, Result};
@@ -212,6 +214,29 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
                     kind: AssetKind::CursorRules,
                     destination: format!("./{}", dest_path.display()),
                     short_description,
+                });
+            }
+        }
+        AssetKind::CursorHooks | AssetKind::ClaudeHooks => {
+            let files = enumerate_files(&resolved.source_path, &entry.include)?;
+            for file_path in files {
+                let name = file_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                if name.is_empty() {
+                    continue;
+                }
+
+                let dest_path = base_dest.join(&name);
+
+                catalog_entries.push(CatalogEntry {
+                    id: format!("{}:{}", entry.id, name),
+                    name,
+                    kind: entry.kind.clone(),
+                    destination: format!("./{}", dest_path.display()),
+                    short_description: None,
                 });
             }
         }
