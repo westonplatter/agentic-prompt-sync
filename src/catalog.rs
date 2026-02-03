@@ -6,7 +6,6 @@
 //! - cursor_rules: One entry per individual rule file
 //! - cursor_hooks: One entry per hook script
 //! - cursor_skills_root: One entry per skill folder
-//! - claude_hooks: One entry per hook script
 //! - agent_skill: One entry per skill folder
 
 use crate::error::{ApsError, Result};
@@ -217,17 +216,14 @@ fn enumerate_entry_assets(entry: &Entry, manifest_dir: &Path) -> Result<Vec<Cata
                 });
             }
         }
-        AssetKind::CursorHooks | AssetKind::ClaudeHooks => {
+        AssetKind::CursorHooks => {
             let files = enumerate_files_recursive(&resolved.source_path, &entry.include)?;
             for file_path in files {
                 let relative_path = file_path
                     .strip_prefix(&resolved.source_path)
                     .map(PathBuf::from)
                     .unwrap_or_else(|_| {
-                        file_path
-                            .file_name()
-                            .map(PathBuf::from)
-                            .unwrap_or_default()
+                        file_path.file_name().map(PathBuf::from).unwrap_or_default()
                     });
                 let name = relative_path.to_string_lossy().replace('\\', "/");
 
@@ -658,7 +654,11 @@ mod tests {
         std::fs::create_dir(dir.join("nested")).unwrap();
         std::fs::write(dir.join("nested").join("hook2.sh"), "content2").unwrap();
         std::fs::create_dir(dir.join("nested").join("inner")).unwrap();
-        std::fs::write(dir.join("nested").join("inner").join("hook3.sh"), "content3").unwrap();
+        std::fs::write(
+            dir.join("nested").join("inner").join("hook3.sh"),
+            "content3",
+        )
+        .unwrap();
 
         // Test without filter
         let files = enumerate_files_recursive(dir, &[])?;

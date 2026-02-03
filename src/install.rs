@@ -4,7 +4,7 @@ use crate::compose::{
     compose_markdown, read_source_file, write_composed_file, ComposeOptions, ComposedSource,
 };
 use crate::error::{ApsError, Result};
-use crate::hooks::{validate_claude_hooks, validate_cursor_hooks};
+use crate::hooks::validate_cursor_hooks;
 use crate::lockfile::{LockedEntry, Lockfile};
 use crate::manifest::{AssetKind, Entry};
 use crate::sources::{clone_at_commit, get_remote_commit_sha, GitInfo, ResolvedSource};
@@ -381,7 +381,6 @@ pub fn install_entry(
         AssetKind::CursorRules
         | AssetKind::CursorHooks
         | AssetKind::CursorSkillsRoot
-        | AssetKind::ClaudeHooks
         | AssetKind::AgentSkill => {
             // For directory assets with symlinks, we add files to the directory
             // without backing up existing content from other sources
@@ -390,7 +389,7 @@ pub fn install_entry(
     };
 
     if should_check_conflict {
-        if matches!(entry.kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+        if matches!(entry.kind, AssetKind::CursorHooks) {
             let mut conflicts = collect_hook_conflicts(&resolved.source_path, &dest_path)?;
             if let Some((source_config, dest_config)) =
                 hooks_config_paths(&entry.kind, &resolved.source_path, &dest_path)?
@@ -431,12 +430,6 @@ pub fn install_entry(
             options.strict,
         )?);
     }
-    if entry.kind == AssetKind::ClaudeHooks {
-        warnings.extend(validate_claude_hooks(
-            &resolved.source_path,
-            options.strict,
-        )?);
-    }
     for warning in &warnings {
         println!("Warning: {}", warning);
     }
@@ -454,7 +447,7 @@ pub fn install_entry(
         )?
     };
 
-    if !options.dry_run && matches!(entry.kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+    if !options.dry_run && matches!(entry.kind, AssetKind::CursorHooks) {
         sync_hooks_config(
             &entry.kind,
             &resolved.source_path,
@@ -628,7 +621,6 @@ fn install_asset(
         AssetKind::CursorRules
         | AssetKind::CursorHooks
         | AssetKind::CursorSkillsRoot
-        | AssetKind::ClaudeHooks
         | AssetKind::AgentSkill => {
             if use_symlink {
                 if include.is_empty() {
@@ -666,7 +658,7 @@ fn install_asset(
             } else {
                 // Copy behavior
                 if include.is_empty() {
-                    if matches!(kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+                    if matches!(kind, AssetKind::CursorHooks) {
                         copy_directory_merge(source, dest)?;
                     } else {
                         copy_directory(source, dest)?;
@@ -676,7 +668,7 @@ fn install_asset(
                     let items = filter_by_prefix(source, include)?;
 
                     // Ensure dest exists
-                    if matches!(kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+                    if matches!(kind, AssetKind::CursorHooks) {
                         if !dest.exists() {
                             std::fs::create_dir_all(dest).map_err(|e| {
                                 ApsError::io(e, format!("Failed to create directory {:?}", dest))
@@ -708,7 +700,7 @@ fn install_asset(
                         })?;
                         let item_dest = dest.join(item_name);
                         if item.is_dir() {
-                            if matches!(kind, AssetKind::CursorHooks | AssetKind::ClaudeHooks) {
+                            if matches!(kind, AssetKind::CursorHooks) {
                                 copy_directory_merge(&item, &item_dest)?;
                             } else {
                                 copy_directory(&item, &item_dest)?;
@@ -1085,11 +1077,9 @@ fn hooks_config_paths(
     source_hooks_dir: &Path,
     dest_hooks_dir: &Path,
 ) -> Result<Option<(PathBuf, PathBuf)>> {
-    let filename = match kind {
-        AssetKind::CursorHooks => "hooks.json",
-        AssetKind::ClaudeHooks => "settings.json",
-        _ => return Ok(None),
-    };
+    if !matches!(kind, AssetKind::CursorHooks) {
+        return Ok(None);
+    }
 
     let source_parent =
         source_hooks_dir
@@ -1104,8 +1094,8 @@ fn hooks_config_paths(
         })?;
 
     Ok(Some((
-        source_parent.join(filename),
-        dest_parent.join(filename),
+        source_parent.join("hooks.json"),
+        dest_parent.join("hooks.json"),
     )))
 }
 

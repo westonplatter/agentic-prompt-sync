@@ -3,25 +3,15 @@ use serde_yaml::Value;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Copy)]
-pub enum HookKind {
-    Cursor,
-    Claude,
-}
-
 pub fn validate_cursor_hooks(hooks_dir: &Path, strict: bool) -> Result<Vec<String>> {
-    validate_hooks(HookKind::Cursor, hooks_dir, strict)
+    validate_hooks(hooks_dir, strict)
 }
 
-pub fn validate_claude_hooks(hooks_dir: &Path, strict: bool) -> Result<Vec<String>> {
-    validate_hooks(HookKind::Claude, hooks_dir, strict)
-}
-
-fn validate_hooks(kind: HookKind, hooks_dir: &Path, strict: bool) -> Result<Vec<String>> {
+fn validate_hooks(hooks_dir: &Path, strict: bool) -> Result<Vec<String>> {
     let mut warnings = Vec::new();
 
     let hooks_root = hooks_root_dir(hooks_dir);
-    let config_path = hooks_root.join(config_filename(kind));
+    let config_path = hooks_root.join("hooks.json");
     if !config_path.exists() {
         warn_or_error(
             &mut warnings,
@@ -56,7 +46,7 @@ fn validate_hooks(kind: HookKind, hooks_dir: &Path, strict: bool) -> Result<Vec<
     };
 
     let commands = collect_hook_commands(hooks_section);
-    let referenced_scripts = collect_hook_script_paths(&commands, kind);
+    let referenced_scripts = collect_hook_script_paths(&commands);
 
     for rel_path in referenced_scripts {
         let script_path = hooks_root.join(rel_path);
@@ -76,13 +66,6 @@ fn hooks_root_dir(hooks_dir: &Path) -> PathBuf {
     match hooks_dir.file_name().and_then(|name| name.to_str()) {
         Some("hooks") | Some("scripts") => hooks_dir.parent().unwrap_or(hooks_dir).to_path_buf(),
         _ => hooks_dir.to_path_buf(),
-    }
-}
-
-fn config_filename(kind: HookKind) -> &'static str {
-    match kind {
-        HookKind::Cursor => "hooks.json",
-        HookKind::Claude => "settings.json",
     }
 }
 
@@ -133,12 +116,12 @@ fn collect_command_values(value: &Value, commands: &mut Vec<String>) {
     }
 }
 
-fn collect_hook_script_paths(commands: &[String], kind: HookKind) -> HashSet<PathBuf> {
+fn collect_hook_script_paths(commands: &[String]) -> HashSet<PathBuf> {
     let mut scripts = HashSet::new();
 
     for command in commands {
         for token in command.split_whitespace() {
-            if let Some(rel_path) = extract_relative_path(token, kind) {
+            if let Some(rel_path) = extract_relative_path(token) {
                 scripts.insert(PathBuf::from(rel_path));
             }
         }
@@ -147,16 +130,13 @@ fn collect_hook_script_paths(commands: &[String], kind: HookKind) -> HashSet<Pat
     scripts
 }
 
-fn extract_relative_path(token: &str, kind: HookKind) -> Option<String> {
+fn extract_relative_path(token: &str) -> Option<String> {
     let token = trim_token(token);
     if token.is_empty() {
         return None;
     }
 
-    let markers = match kind {
-        HookKind::Cursor => [".cursor/", ".cursor\\"],
-        HookKind::Claude => [".claude/", ".claude\\"],
-    };
+    let markers = [".cursor/", ".cursor\\"];
 
     for marker in markers {
         if let Some(position) = token.find(marker) {
