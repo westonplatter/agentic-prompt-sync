@@ -1,5 +1,6 @@
 use crate::backup::{create_backup, has_conflict};
 use crate::checksum::{compute_source_checksum, compute_string_checksum};
+use crate::claude_settings::{compose_permissions, read_permission_fragment, write_settings_file};
 use crate::compose::{
     compose_markdown, read_source_file, write_composed_file, ComposeOptions, ComposedSource,
 };
@@ -327,6 +328,7 @@ pub fn install_entry(
     let should_check_conflict = match entry.kind {
         AssetKind::AgentsMd => true,          // Single file - always check
         AssetKind::CompositeAgentsMd => true, // Composite file - always check
+        AssetKind::ClaudeSettings => true,    // Settings file - always check
         AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {
             // For directory assets with symlinks, we add files to the directory
             // without backing up existing content from other sources
@@ -482,6 +484,102 @@ pub fn install_composite_entry(
     })
 }
 
+/// Install a claude_settings entry (compose multiple YAML permission fragments into JSON)
+pub fn install_claude_settings_entry(
+    entry: &Entry,
+    manifest_dir: &Path,
+    lockfile: &Lockfile,
+    options: &InstallOptions,
+) -> Result<InstallResult> {
+    info!("Processing claude_settings entry: {}", entry.id);
+
+    if entry.sources.is_empty() {
+        return Err(ApsError::CompositeRequiresSources {
+            id: entry.id.clone(),
+        });
+    }
+
+    // Resolve all sources and read permission fragments
+    let mut fragments = Vec::new();
+    let mut all_checksums: Vec<String> = Vec::new();
+
+    for source in &entry.sources {
+        let adapter = source.to_adapter();
+        let resolved = adapter.resolve(manifest_dir)?;
+
+        if !resolved.source_path.exists() {
+            return Err(ApsError::SourcePathNotFound {
+                path: resolved.source_path,
+            });
+        }
+
+        // Read the permission fragment
+        let fragment = read_permission_fragment(&resolved.source_path)?;
+        fragments.push(fragment);
+
+        // Compute and collect checksum for this source
+        let source_checksum = compute_source_checksum(&resolved.source_path)?;
+        all_checksums.push(source_checksum);
+    }
+
+    // Compose all fragments into a single JSON string
+    let composed_json = compose_permissions(&fragments)?;
+
+    // Compute checksum of the final composed content
+    let checksum = compute_string_checksum(&composed_json);
+    debug!("Composed settings checksum: {}", checksum);
+
+    // Resolve destination path
+    let dest_path = manifest_dir.join(entry.destination());
+    debug!("Destination path: {:?}", dest_path);
+
+    // Check if content is unchanged
+    if lockfile.checksum_matches(&entry.id, &checksum) && dest_path.exists() {
+        info!(
+            "Claude settings entry {} is up to date (checksum match)",
+            entry.id
+        );
+        return Ok(InstallResult {
+            id: entry.id.clone(),
+            installed: false,
+            skipped_no_change: true,
+            locked_entry: None,
+            warnings: Vec::new(),
+            dest_path: dest_path.clone(),
+            was_symlink: false,
+            upgrade_available: None,
+        });
+    }
+
+    // Check for conflicts and handle backup if needed
+    handle_conflict(&dest_path, manifest_dir, options)?;
+
+    // Write the settings file
+    if !options.dry_run {
+        write_settings_file(&composed_json, &dest_path)?;
+        info!("Wrote Claude settings to {:?}", dest_path);
+    } else {
+        println!("[dry-run] Would write Claude settings to {:?}", dest_path);
+    }
+
+    // Create locked entry with original source paths (preserving shell variables)
+    let source_paths: Vec<String> = entry.sources.iter().map(|s| s.display_path()).collect();
+
+    let locked_entry =
+        LockedEntry::new_composite(source_paths, &dest_path.to_string_lossy(), checksum);
+
+    Ok(InstallResult {
+        id: entry.id.clone(),
+        installed: !options.dry_run,
+        skipped_no_change: false,
+        locked_entry: Some(locked_entry),
+        warnings: Vec::new(),
+        dest_path,
+        was_symlink: false,
+        upgrade_available: None,
+    })
+}
+
 /// Install an asset based on its kind
 fn install_asset(
     kind: &AssetKind,
@@ -520,6 +618,14 @@ fn install_asset(
             // This arm exists for exhaustive matching
             return Err(ApsError::ComposeError {
                 message: "Composite entries should use install_composite_entry".to_string(),
+            });
+        }
+        AssetKind::ClaudeSettings => {
+            // Claude settings entries are handled by install_claude_settings_entry
+            // This arm exists for exhaustive matching
+            return Err(ApsError::ClaudeSettingsError {
+                message: "Claude settings entries should use install_claude_settings_entry"
+                    .to_string(),
             });
         }
         AssetKind::CursorRules | AssetKind::CursorSkillsRoot | AssetKind::AgentSkill => {

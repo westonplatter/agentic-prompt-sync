@@ -140,6 +140,10 @@ pub enum ApsError {
     #[error("Failed to compose markdown files: {message}")]
     #[diagnostic(code(aps::compose::error))]
     ComposeError { message: String },
+
+    #[error("Failed to compose Claude settings: {message}")]
+    #[diagnostic(code(aps::claude_settings::error))]
+    ClaudeSettingsError { message: String },
 }
 
 impl ApsError {
