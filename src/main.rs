@@ -5,6 +5,7 @@ mod cli;
 mod commands;
 mod compose;
 mod error;
+mod github_url;
 mod install;
 mod lockfile;
 mod manifest;
@@ -14,7 +15,7 @@ mod sync_output;
 
 use clap::Parser;
 use cli::{CatalogCommands, Cli, Commands};
-use commands::{cmd_catalog_generate, cmd_init, cmd_status, cmd_sync, cmd_validate};
+use commands::{cmd_add, cmd_catalog_generate, cmd_init, cmd_status, cmd_sync, cmd_validate};
 use miette::Result;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
@@ -42,6 +43,7 @@ fn main() -> Result<()> {
     // Execute the appropriate command
     let result = match cli.command {
         Commands::Init(args) => cmd_init(args),
+        Commands::Add(args) => cmd_add(args),
         Commands::Sync(args) => cmd_sync(args),
         Commands::Validate(args) => cmd_validate(args),
         Commands::Status(args) => cmd_status(args),

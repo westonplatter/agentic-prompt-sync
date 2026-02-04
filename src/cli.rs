@@ -23,6 +23,9 @@ pub enum Commands {
     /// Initialize a new manifest file
     Init(InitArgs),
 
+    /// Add a skill from a GitHub URL to the manifest
+    Add(AddArgs),
+
     /// Sync and install assets from manifest sources
     Sync(SyncArgs),
 
@@ -45,6 +48,39 @@ pub struct InitArgs {
     /// Path for the manifest file
     #[arg(long)]
     pub manifest: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct AddArgs {
+    /// GitHub URL to a skill folder (e.g., https://github.com/owner/repo/blob/main/path/to/skill)
+    /// or direct URL to a SKILL.md file
+    #[arg(value_name = "URL")]
+    pub url: String,
+
+    /// Custom entry ID (defaults to skill folder name)
+    #[arg(long)]
+    pub id: Option<String>,
+
+    /// Asset kind (defaults to agent_skill)
+    #[arg(long, value_enum, default_value = "agent-skill")]
+    pub kind: AddAssetKind,
+
+    /// Path to the manifest file
+    #[arg(long)]
+    pub manifest: Option<PathBuf>,
+}
+
+#[derive(ValueEnum, Clone, Debug, Default)]
+pub enum AddAssetKind {
+    #[default]
+    #[value(name = "agent-skill")]
+    AgentSkill,
+    #[value(name = "cursor-rules")]
+    CursorRules,
+    #[value(name = "cursor-skills-root")]
+    CursorSkillsRoot,
+    #[value(name = "agents-md")]
+    AgentsMd,
 }
 
 #[derive(ValueEnum, Clone, Debug, Default)]

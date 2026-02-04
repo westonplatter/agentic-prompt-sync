@@ -1,12 +1,15 @@
 use crate::catalog::Catalog;
 use crate::cli::{
-    CatalogGenerateArgs, InitArgs, ManifestFormat, StatusArgs, SyncArgs, ValidateArgs,
+    AddArgs, AddAssetKind, CatalogGenerateArgs, InitArgs, ManifestFormat, StatusArgs, SyncArgs,
+    ValidateArgs,
 };
 use crate::error::{ApsError, Result};
+use crate::github_url::parse_github_url;
 use crate::install::{install_composite_entry, install_entry, InstallOptions, InstallResult};
 use crate::lockfile::{display_status, Lockfile};
 use crate::manifest::{
-    discover_manifest, manifest_dir, validate_manifest, AssetKind, Manifest, DEFAULT_MANIFEST_NAME,
+    discover_manifest, load_manifest, manifest_dir, validate_manifest, AssetKind, Entry, Manifest,
+    Source, DEFAULT_MANIFEST_NAME,
 };
 use crate::orphan::{detect_orphaned_paths, prompt_and_cleanup_orphans};
 use crate::sync_output::{print_sync_results, print_sync_summary, SyncDisplayItem, SyncStatus};
@@ -102,6 +105,125 @@ fn update_gitignore(manifest_path: &Path) -> Result<()> {
     writeln!(file, "{}", backup_entry)
         .map_err(|e| ApsError::io(e, "Failed to write to .gitignore"))?;
     println!("Added {} to .gitignore", backup_entry);
+
+    Ok(())
+}
+
+/// Execute the `aps add` command
+pub fn cmd_add(args: AddArgs) -> Result<()> {
+    // Parse the GitHub URL
+    let parsed = parse_github_url(&args.url)?;
+
+    // Determine the entry ID
+    let entry_id = args.id.unwrap_or_else(|| {
+        parsed
+            .skill_name()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "unnamed-skill".to_string())
+    });
+
+    // Convert CLI asset kind to manifest asset kind
+    let asset_kind = match args.kind {
+        AddAssetKind::AgentSkill => AssetKind::AgentSkill,
+        AddAssetKind::CursorRules => AssetKind::CursorRules,
+        AddAssetKind::CursorSkillsRoot => AssetKind::CursorSkillsRoot,
+        AddAssetKind::AgentsMd => AssetKind::AgentsMd,
+    };
+
+    // Get the skill path (strips SKILL.md if present)
+    let skill_path = parsed.skill_path().to_string();
+
+    // Create the new entry
+    let new_entry = Entry {
+        id: entry_id.clone(),
+        kind: asset_kind.clone(),
+        source: Some(Source::Git {
+            repo: parsed.repo_url.clone(),
+            r#ref: parsed.git_ref.clone(),
+            shallow: true,
+            path: Some(skill_path.clone()),
+        }),
+        sources: Vec::new(),
+        dest: Some(format!(
+            "{}/{}/",
+            asset_kind.default_dest().to_string_lossy().trim_end_matches('/'),
+            entry_id
+        )),
+        include: Vec::new(),
+    };
+
+    // Find or create manifest
+    let manifest_path = match args.manifest {
+        Some(p) => p,
+        None => {
+            // Try to discover existing manifest, or use default in current directory
+            match discover_manifest(None) {
+                Ok((_, path)) => path,
+                Err(ApsError::ManifestNotFound) => {
+                    // Create a new manifest in current directory
+                    let path = std::env::current_dir()
+                        .map_err(|e| ApsError::io(e, "Failed to get current directory"))?
+                        .join(DEFAULT_MANIFEST_NAME);
+                    println!("Creating new manifest at {:?}", path);
+
+                    let manifest = Manifest {
+                        entries: vec![new_entry.clone()],
+                    };
+
+                    let content =
+                        serde_yaml::to_string(&manifest).map_err(|e| ApsError::ManifestParseError {
+                            message: format!("Failed to serialize manifest: {}", e),
+                        })?;
+
+                    fs::write(&path, &content).map_err(|e| {
+                        ApsError::io(e, format!("Failed to write manifest to {:?}", path))
+                    })?;
+
+                    println!("Added entry '{}' to manifest", entry_id);
+                    println!("\nEntry details:");
+                    println!("  ID: {}", entry_id);
+                    println!("  Kind: {:?}", asset_kind);
+                    println!("  Repo: {}", parsed.repo_url);
+                    println!("  Ref: {}", parsed.git_ref);
+                    println!("  Path: {}", skill_path);
+
+                    println!("\nRun `aps sync` to install the skill.");
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    };
+
+    // Load existing manifest
+    let mut manifest = load_manifest(&manifest_path)?;
+
+    // Check for duplicate ID
+    if manifest.entries.iter().any(|e| e.id == entry_id) {
+        return Err(ApsError::DuplicateId { id: entry_id });
+    }
+
+    // Add the new entry
+    manifest.entries.push(new_entry);
+
+    // Serialize and write back
+    let content = serde_yaml::to_string(&manifest).map_err(|e| ApsError::ManifestParseError {
+        message: format!("Failed to serialize manifest: {}", e),
+    })?;
+
+    fs::write(&manifest_path, &content)
+        .map_err(|e| ApsError::io(e, format!("Failed to write manifest to {:?}", manifest_path)))?;
+
+    info!("Added entry '{}' to {:?}", entry_id, manifest_path);
+    println!("Added entry '{}' to {:?}", entry_id, manifest_path);
+    println!("\nEntry details:");
+    println!("  ID: {}", entry_id);
+    println!("  Kind: {:?}", asset_kind);
+    println!("  Repo: {}", parsed.repo_url);
+    println!("  Ref: {}", parsed.git_ref);
+    println!("  Path: {}", skill_path);
+
+    println!("\nRun `aps sync` to install the skill.");
 
     Ok(())
 }

@@ -140,6 +140,13 @@ pub enum ApsError {
     #[error("Failed to compose markdown files: {message}")]
     #[diagnostic(code(aps::compose::error))]
     ComposeError { message: String },
+
+    #[error("Invalid GitHub URL: {url}")]
+    #[diagnostic(
+        code(aps::add::invalid_github_url),
+        help("{reason}")
+    )]
+    InvalidGitHubUrl { url: String, reason: String },
 }
 
 impl ApsError {

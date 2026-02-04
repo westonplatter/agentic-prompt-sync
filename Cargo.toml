@@ -49,6 +49,9 @@ tempfile = "3"
 # Shell variable expansion
 shellexpand = "3"
 
+# URL parsing
+url = "2"
+
 [dev-dependencies]
 # Integration testing for CLI
 assert_cmd = "2"
