@@ -4,8 +4,8 @@ use crate::cli::{
     ValidateArgs,
 };
 use crate::error::{ApsError, Result};
-use crate::hooks::validate_cursor_hooks;
 use crate::github_url::parse_github_url;
+use crate::hooks::validate_cursor_hooks;
 use crate::install::{install_composite_entry, install_entry, InstallOptions, InstallResult};
 use crate::lockfile::{display_status, Lockfile};
 use crate::manifest::{
