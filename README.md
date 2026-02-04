@@ -92,7 +92,7 @@ aps add https://github.com/hashicorp/agent-skills/blob/main/terraform/module-gen
 aps add https://github.com/hashicorp/agent-skills/tree/main/terraform/module-generation/skills/refactor-module
 ```
 
-This parses the GitHub URL, adds an entry to `aps.yaml`, and syncs the skill immediately.
+This parses the GitHub URL, adds an entry to `aps.yaml`, and syncs **only that skill** immediately (other entries are not affected).
 
 3. **Or manually edit the manifest** to define your assets:
 
