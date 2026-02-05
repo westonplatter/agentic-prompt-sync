@@ -1181,7 +1181,7 @@ fn sync_hooks_config(
 fn collect_hook_conflicts(source: &Path, dest: &Path) -> Result<Vec<PathBuf>> {
     let mut conflicts = Vec::new();
 
-    for entry in WalkDir::new(source) {
+    for entry in WalkDir::new(source).follow_links(true) {
         let entry = entry.map_err(|e| {
             ApsError::io(
                 std::io::Error::other(e),
