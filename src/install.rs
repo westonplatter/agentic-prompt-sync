@@ -985,7 +985,7 @@ fn copy_directory_merge(src: &Path, dst: &Path) -> Result<()> {
             .map_err(|e| ApsError::io(e, format!("Failed to create directory {:?}", dst)))?;
     }
 
-    for entry in WalkDir::new(&src) {
+    for entry in WalkDir::new(&src).follow_links(true) {
         let entry = entry.map_err(|e| {
             ApsError::io(
                 std::io::Error::other(e),
