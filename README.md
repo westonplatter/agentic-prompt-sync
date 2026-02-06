@@ -29,13 +29,19 @@
 
 ### Quick Install (macOS/Linux)
 
+Install or update `aps` using cargo
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/westonplatter/agentic-prompt-sync/main/install.sh | sh
+# install the latest version
+cargo install aps
 ```
 
-This downloads the latest release and installs to `~/.local/bin`. Set `APS_INSTALL_DIR` to customize:
+Or use curl,
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/westonplatter/agentic-prompt-sync/main/install.sh | sh
+
+# or override the install locatiion
 APS_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/westonplatter/agentic-prompt-sync/main/install.sh | sh
 ```
 
@@ -51,14 +57,6 @@ Pre-built binaries for all platforms are available on the [Releases page](https:
 | macOS ARM   | `aps-macos-arm64.tar.gz`    |
 | Windows x64 | `aps-windows-x64.zip`       |
 
-### Cargo Install
-
-If you have Rust installed:
-
-```bash
-cargo install aps
-```
-
 ### Build from Source
 
 ```bash
@@ -66,34 +64,6 @@ git clone https://github.com/westonplatter/agentic-prompt-sync.git
 cd agentic-prompt-sync
 cargo build --release
 # Binary at target/release/aps
-```
-
-## Updating
-
-To update `aps` to the latest version, use the same method you used to install it.
-
-### Quick Update (macOS/Linux)
-
-Re-run the install script to download and install the latest version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/westonplatter/agentic-prompt-sync/main/install.sh | sh
-```
-
-Or download the latest binary for your platform from the [Releases page](https://github.com/westonplatter/agentic-prompt-sync/releases) and replace your existing installation.
-
-### Cargo Update
-
-If you installed via `cargo install`:
-
-```bash
-cargo install aps
-```
-
-Cargo will automatically detect and install the newer version. If you want to force a reinstall of the same version, use:
-
-```bash
-cargo install aps --force
 ```
 
 ## Getting Started
@@ -265,6 +235,26 @@ entries:
 | `git`        | Sync from a git repository  | `repo`, `ref`, `path`, `shallow` |
 
 **Shell Variable Expansion**: Path values in `root` and `path` fields support shell variable expansion (e.g., `$HOME`, `$USER`). This makes manifests portable across different machines and users.
+
+### Filtering with `include`
+
+When a source contains multiple subdirectories (e.g., a skills repo with many skills), use the `include` field to sync only specific ones:
+
+```yaml
+- id: anthropic-skills
+  kind: agent_skill
+  source:
+    type: git
+    repo: git@github.com:anthropics/skills.git
+    ref: main
+    path: skills
+  include:
+    - pdf
+    - skill-creation
+  dest: ./.claude/skills/
+```
+
+Each value in `include` is matched against subdirectory names within the source `path`. Only matching subdirectories are synced. If `include` is omitted, all subdirectories are synced.
 
 ### Composite AGENTS.md
 
