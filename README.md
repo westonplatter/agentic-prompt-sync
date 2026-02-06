@@ -204,6 +204,7 @@ entries:
       repo: git@github.com:your-username/dotfiles.git
       ref: main
       path: .cursor/rules
+      # shallow: false  # full clone
     dest: ./.cursor/rules/
 
   # Pull in more Cursor Rules from a local file system
@@ -213,6 +214,7 @@ entries:
       type: filesystem
       root: $HOME/work/acme-corp/internal-prompts
       path: rules
+      # symlink: false  # copy files instead of symlinking
     dest: ./.cursor/rules/
 ```
 
