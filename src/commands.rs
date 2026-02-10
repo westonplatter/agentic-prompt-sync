@@ -429,7 +429,7 @@ fn repo_basename(repo_url: &str) -> Option<String> {
     if let Ok(parsed) = url::Url::parse(repo_url) {
         let name = parsed
             .path_segments()
-            .and_then(|segments| segments.filter(|s| !s.is_empty()).last())
+            .and_then(|mut segments| segments.rfind(|s| !s.is_empty()))
             .map(|s| s.to_string())?;
         return Some(name.trim_end_matches(".git").to_string());
     }
