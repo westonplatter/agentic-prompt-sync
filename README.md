@@ -289,6 +289,7 @@ Key features:
 
 The lockfile tracks installed assets and is automatically created/updated by `aps sync`. **This file should be committed to version control** to ensure reproducible installations across your team. It stores:
 
+- APS version that generated/modified the lockfile
 - Source information
 - Destination paths
 - Last update timestamp
