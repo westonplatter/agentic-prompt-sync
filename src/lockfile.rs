@@ -166,6 +166,10 @@ pub struct Lockfile {
     #[serde(default = "default_version")]
     pub version: u32,
 
+    /// Version of the aps package that generated this lockfile
+    #[serde(default)]
+    pub aps_version: String,
+
     /// Locked entries by ID
     #[serde(default)]
     pub entries: HashMap<String, LockedEntry>,
@@ -277,6 +281,7 @@ impl Lockfile {
     pub fn new() -> Self {
         Self {
             version: default_version(),
+            aps_version: env!("CARGO_PKG_VERSION").to_string(),
             entries: HashMap::new(),
         }
     }
@@ -367,9 +372,10 @@ impl Lockfile {
 
     /// Save the lockfile to disk.
     ///
-    /// Automatically migrates from legacy filenames if they exist in the same
-    /// directory but do not match the canonical manifest-based name.
-    pub fn save(&self, path: &Path) -> Result<()> {
+    /// Automatically migrates from legacy filename if it exists.
+    /// Always stamps the current aps version before writing.
+    pub fn save(&mut self, path: &Path) -> Result<()> {
+        self.aps_version = env!("CARGO_PKG_VERSION").to_string();
         let content = serde_yaml::to_string(self).map_err(|e| ApsError::LockfileReadError {
             message: format!("Failed to serialize lockfile: {}", e),
         })?;
@@ -453,6 +459,10 @@ impl Lockfile {
 
 /// Display status information from the lockfile
 pub fn display_status(lockfile: &Lockfile) {
+    if !lockfile.aps_version.is_empty() {
+        println!("APS version:  {}", lockfile.aps_version);
+    }
+
     if lockfile.entries.is_empty() {
         println!("No entries in lockfile.");
         return;
