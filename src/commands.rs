@@ -1,10 +1,9 @@
 use crate::catalog::Catalog;
 use crate::cli::{
-    AddArgs, AddAssetKind, CatalogGenerateArgs, InitArgs, ManifestFormat, StatusArgs, SyncArgs,
-    ValidateArgs,
+    AddArgs, CatalogGenerateArgs, InitArgs, ManifestFormat, StatusArgs, SyncArgs, ValidateArgs,
 };
 use crate::error::{ApsError, Result};
-use crate::github_url::parse_github_url;
+use crate::github_url::parse_repo_identifier;
 use crate::hooks::validate_cursor_hooks;
 use crate::install::{install_composite_entry, install_entry, InstallOptions, InstallResult};
 use crate::lockfile::{display_status, Lockfile};
@@ -13,7 +12,9 @@ use crate::manifest::{
     Source, DEFAULT_MANIFEST_NAME,
 };
 use crate::orphan::{detect_orphaned_paths, prompt_and_cleanup_orphans};
+use crate::sources::GitCloneCache;
 use crate::sync_output::{print_sync_results, print_sync_summary, SyncDisplayItem, SyncStatus};
+use console::{style, Style};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -112,47 +113,77 @@ fn update_gitignore(manifest_path: &Path) -> Result<()> {
 
 /// Execute the `aps add` command
 pub fn cmd_add(args: AddArgs) -> Result<()> {
-    // Parse the GitHub URL
-    let parsed = parse_github_url(&args.url)?;
+    let (asset_kind, repo_input, legacy_used) = parse_add_targets(&args.targets)?;
 
-    // Determine the entry ID
-    let entry_id = args.id.unwrap_or_else(|| {
-        parsed
-            .skill_name()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "unnamed-skill".to_string())
-    });
+    if legacy_used {
+        eprintln!(
+            "Deprecated: `aps add <repo_url_or_path>` is now `aps add <asset_type> <repo_url_or_path>`.\n\
+             Example: aps add agent_skill {}\n",
+            repo_input
+        );
+    }
 
-    // Convert CLI asset kind to manifest asset kind
-    let asset_kind = match args.kind {
-        AddAssetKind::AgentSkill => AssetKind::AgentSkill,
-        AddAssetKind::CursorRules => AssetKind::CursorRules,
-        AddAssetKind::CursorSkillsRoot => AssetKind::CursorSkillsRoot,
-        AddAssetKind::AgentsMd => AssetKind::AgentsMd,
-    };
+    let parsed = parse_repo_identifier(&repo_input)?;
 
-    // Get the skill path (strips SKILL.md if present)
-    let skill_path = parsed.skill_path().to_string();
+    if parsed.git_ref.is_some() && args.git_ref.is_some() {
+        return Err(ApsError::InvalidAddArguments {
+            message: "Git ref is already specified in the URL; remove --ref or use a repo URL"
+                .to_string(),
+        });
+    }
 
-    // Create the new entry
-    let new_entry = Entry {
-        id: entry_id.clone(),
-        kind: asset_kind.clone(),
-        source: Some(Source::Git {
-            repo: parsed.repo_url.clone(),
-            r#ref: parsed.git_ref.clone(),
-            shallow: true,
-            path: Some(skill_path.clone()),
-        }),
-        sources: Vec::new(),
-        dest: Some(format!(
+    if parsed.path.is_some() && args.path.is_some() {
+        return Err(ApsError::InvalidAddArguments {
+            message: "Path is already specified in the URL; remove --path or use a repo URL"
+                .to_string(),
+        });
+    }
+
+    let git_ref = args
+        .git_ref
+        .or(parsed.git_ref)
+        .unwrap_or_else(|| "auto".to_string());
+
+    let mut path = args.path.or(parsed.path);
+
+    if asset_kind == AssetKind::AgentSkill {
+        let raw_path = path.ok_or_else(|| ApsError::MissingAddPath {
+            asset_type: "agent_skill".to_string(),
+            hint: "Use a GitHub blob/tree URL or pass --path to the skill folder".to_string(),
+        })?;
+        path = Some(normalize_skill_path(&raw_path));
+    } else if path.is_none() {
+        path = default_path_for_kind(&asset_kind);
+    }
+
+    let entry_id = args
+        .id
+        .unwrap_or_else(|| derive_entry_id(&asset_kind, &parsed.repo_url, path.as_deref()));
+
+    let dest = if asset_kind == AssetKind::AgentSkill {
+        Some(format!(
             "{}/{}/",
             asset_kind
                 .default_dest()
                 .to_string_lossy()
                 .trim_end_matches('/'),
             entry_id
-        )),
+        ))
+    } else {
+        None
+    };
+
+    let new_entry = Entry {
+        id: entry_id.clone(),
+        kind: asset_kind.clone(),
+        source: Some(Source::Git {
+            repo: parsed.repo_url.clone(),
+            r#ref: git_ref,
+            shallow: true,
+            path,
+        }),
+        sources: Vec::new(),
+        dest,
         include: Vec::new(),
     };
 
@@ -198,8 +229,10 @@ pub fn cmd_add(args: AddArgs) -> Result<()> {
                             strict: false,
                             upgrade: false,
                         })?;
-                    } else {
+                    } else if asset_kind == AssetKind::AgentSkill {
                         println!("Run `aps sync` to install the skill.");
+                    } else {
+                        println!("Run `aps sync` to install the asset.");
                     }
 
                     return Ok(());
@@ -247,11 +280,170 @@ pub fn cmd_add(args: AddArgs) -> Result<()> {
             strict: false,
             upgrade: false,
         })?;
-    } else {
+    } else if asset_kind == AssetKind::AgentSkill {
         println!("Run `aps sync` to install the skill.");
+    } else {
+        println!("Run `aps sync` to install the asset.");
     }
 
     Ok(())
+}
+
+fn sync_status_for_result(result: &InstallResult) -> SyncStatus {
+    if !result.warnings.is_empty() {
+        SyncStatus::Warning
+    } else if result.skipped_no_change && result.upgrade_available.is_some() {
+        SyncStatus::Upgradable
+    } else if result.skipped_no_change {
+        SyncStatus::Current
+    } else if result.was_symlink {
+        SyncStatus::Synced
+    } else {
+        SyncStatus::Copied
+    }
+}
+
+fn sync_status_label(status: SyncStatus) -> &'static str {
+    match status {
+        SyncStatus::Synced => "synced",
+        SyncStatus::Copied => "copied",
+        SyncStatus::Current => "current",
+        SyncStatus::Upgradable => "upgrade available",
+        SyncStatus::Warning => "warning",
+        SyncStatus::Error => "error",
+    }
+}
+
+fn progress_style_for_status(status: SyncStatus) -> Style {
+    match status {
+        SyncStatus::Synced | SyncStatus::Copied => Style::new().green(),
+        SyncStatus::Current => Style::new().dim(),
+        SyncStatus::Upgradable => Style::new().color256(208),
+        SyncStatus::Warning => Style::new().yellow(),
+        SyncStatus::Error => Style::new().red(),
+    }
+}
+
+fn format_entry_source(entry: &Entry) -> String {
+    if entry.is_composite() {
+        return format!("{} composite source(s)", entry.sources.len());
+    }
+
+    match &entry.source {
+        Some(Source::Git { repo, .. }) => format!("git repo {}", repo),
+        Some(Source::Filesystem { root, path, .. }) => match path {
+            Some(p) => format!("filesystem {} ({})", root, p),
+            None => format!("filesystem {}", root),
+        },
+        None => "no source configured".to_string(),
+    }
+}
+
+fn parse_add_targets(targets: &[String]) -> Result<(AssetKind, String, bool)> {
+    match targets.len() {
+        1 => {
+            let normalized = targets[0].trim().replace('-', "_");
+            if AssetKind::from_str(&normalized).is_ok() {
+                return Err(ApsError::InvalidAddArguments {
+                    message:
+                        "Missing repository identifier. Usage: aps add <asset_type> <repo_url_or_path>"
+                            .to_string(),
+                });
+            }
+            Ok((AssetKind::AgentSkill, targets[0].clone(), true))
+        }
+        2 => {
+            let kind = parse_asset_kind(&targets[0])?;
+            Ok((kind, targets[1].clone(), false))
+        }
+        _ => Err(ApsError::InvalidAddArguments {
+            message: "Expected either <repo_url_or_path> or <asset_type> <repo_url_or_path>"
+                .to_string(),
+        }),
+    }
+}
+
+fn parse_asset_kind(input: &str) -> Result<AssetKind> {
+    let normalized = input.trim().replace('-', "_");
+    let kind = AssetKind::from_str(&normalized)?;
+    if !matches!(
+        kind,
+        AssetKind::AgentSkill
+            | AssetKind::CursorRules
+            | AssetKind::CursorSkillsRoot
+            | AssetKind::AgentsMd
+    ) {
+        return Err(ApsError::InvalidAddArguments {
+            message: format!(
+                "Asset type '{}' is not supported by `aps add` yet. Supported types: agent_skill, cursor_rules, cursor_skills_root, agents_md",
+                normalized
+            ),
+        });
+    }
+    Ok(kind)
+}
+
+fn normalize_skill_path(path: &str) -> String {
+    let path = path.trim();
+    if path.eq_ignore_ascii_case("skill.md") {
+        return "".to_string();
+    }
+    if let Some(stripped) = path.strip_suffix("/SKILL.md") {
+        return stripped.to_string();
+    }
+    if let Some(stripped) = path.strip_suffix("/skill.md") {
+        return stripped.to_string();
+    }
+    path.to_string()
+}
+
+fn default_path_for_kind(kind: &AssetKind) -> Option<String> {
+    match kind {
+        AssetKind::CursorRules => Some(".cursor/rules".to_string()),
+        AssetKind::CursorHooks => Some(".cursor".to_string()),
+        AssetKind::CursorSkillsRoot => Some(".cursor/skills".to_string()),
+        AssetKind::AgentsMd => Some("AGENTS.md".to_string()),
+        AssetKind::AgentSkill | AssetKind::CompositeAgentsMd => None,
+    }
+}
+
+fn derive_entry_id(kind: &AssetKind, repo_url: &str, path: Option<&str>) -> String {
+    match kind {
+        AssetKind::AgentSkill => path
+            .and_then(|p| p.rsplit('/').next())
+            .filter(|p| !p.is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| repo_basename(repo_url))
+            .unwrap_or_else(|| "unnamed-skill".to_string()),
+        _ => repo_basename(repo_url)
+            .or_else(|| {
+                path.and_then(|p| p.rsplit('/').next())
+                    .filter(|p| !p.is_empty())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "unnamed-asset".to_string()),
+    }
+}
+
+fn repo_basename(repo_url: &str) -> Option<String> {
+    if let Ok(parsed) = url::Url::parse(repo_url) {
+        let name = parsed
+            .path_segments()
+            .and_then(|mut segments| segments.rfind(|s| !s.is_empty()))
+            .map(|s| s.to_string())?;
+        return Some(name.trim_end_matches(".git").to_string());
+    }
+
+    if let Some((_, path)) = repo_url.split_once(':') {
+        let name = path.rsplit('/').next().map(|s| s.to_string())?;
+        return Some(name.trim_end_matches(".git").to_string());
+    }
+
+    let name = std::path::Path::new(repo_url)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())?;
+    Some(name.trim_end_matches(".git").to_string())
 }
 
 /// Execute the `aps sync` command
@@ -297,20 +489,69 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
         strict: args.strict,
         upgrade: args.upgrade,
     };
+    let mut git_cache = GitCloneCache::new();
 
     // Detect orphaned paths (destinations that changed)
     let orphans = detect_orphaned_paths(&entries_to_install, &lockfile, &base_dir);
 
-    // Install selected entries
+    // Install selected entries with progressive feedback
+    let total = entries_to_install.len();
     let mut results: Vec<InstallResult> = Vec::new();
-    for entry in &entries_to_install {
+    for (index, entry) in entries_to_install.iter().enumerate() {
+        let ordinal = index + 1;
+        let source_desc = format_entry_source(entry);
+        println!(
+            "({}/{}) {} {} {}",
+            ordinal,
+            total,
+            style("Syncing").dim(),
+            style(&entry.id).cyan().bold(),
+            style(format!("from {}...", source_desc)).dim(),
+        );
+        std::io::stdout().flush().ok();
+
+        let start = std::time::Instant::now();
+
         // Use composite install for composite entries, regular install otherwise
         let result = if entry.is_composite() {
-            install_composite_entry(entry, &base_dir, &lockfile, &options)?
+            install_composite_entry(entry, &base_dir, &lockfile, &options, &mut git_cache)
         } else {
-            install_entry(entry, &base_dir, &lockfile, &options)?
+            install_entry(entry, &base_dir, &lockfile, &options, &mut git_cache)
         };
-        results.push(result);
+
+        match result {
+            Ok(result) => {
+                let elapsed = start.elapsed();
+                let status = sync_status_for_result(&result);
+                let label = sync_status_label(status);
+                let status_style = progress_style_for_status(status);
+                println!(
+                    "({}/{}) {} {} {} {}",
+                    ordinal,
+                    total,
+                    style("Finished").dim(),
+                    style(&entry.id).cyan().bold(),
+                    style(format!("in {:.2?}", elapsed)).dim(),
+                    status_style.apply_to(format!("[{}]", label)),
+                );
+                std::io::stdout().flush().ok();
+                results.push(result);
+            }
+            Err(err) => {
+                let elapsed = start.elapsed();
+                let error_style = Style::new().red();
+                eprintln!(
+                    "({}/{}) {} {} {}: {}",
+                    ordinal,
+                    total,
+                    error_style.apply_to("Failed"),
+                    style(&entry.id).cyan().bold(),
+                    style(format!("after {:.2?}", elapsed)).dim(),
+                    error_style.apply_to(err.to_string()),
+                );
+                return Err(err);
+            }
+        }
     }
 
     // Cleanup orphaned paths after successful install
@@ -348,17 +589,7 @@ pub fn cmd_sync(args: SyncArgs) -> Result<()> {
     let display_items: Vec<SyncDisplayItem> = results
         .iter()
         .map(|r| {
-            let status = if !r.warnings.is_empty() {
-                SyncStatus::Warning
-            } else if r.skipped_no_change && r.upgrade_available.is_some() {
-                SyncStatus::Upgradable
-            } else if r.skipped_no_change {
-                SyncStatus::Current
-            } else if r.was_symlink {
-                SyncStatus::Synced
-            } else {
-                SyncStatus::Copied
-            };
+            let status = sync_status_for_result(r);
 
             let mut item = SyncDisplayItem::new(
                 r.id.clone(),
