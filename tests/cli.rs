@@ -1335,12 +1335,7 @@ fn add_repo_level_url_non_github_fails() {
 
     // Non-GitHub repo-level URL should fail
     aps()
-        .args([
-            "add",
-            "https://gitlab.com/owner/repo",
-            "--all",
-            "--no-sync",
-        ])
+        .args(["add", "https://gitlab.com/owner/repo", "--all", "--no-sync"])
         .current_dir(&project)
         .assert()
         .failure()
@@ -1401,7 +1396,7 @@ fn add_repo_url_no_skills_found_errors() {
 }
 
 #[test]
-fn add_repo_with_local_git_discovers_skills_using_all() {
+fn sync_local_git_repo_installs_all_skills() {
     let temp = assert_fs::TempDir::new().unwrap();
 
     // Create a local skills repo
@@ -1413,13 +1408,8 @@ fn add_repo_with_local_git_discovers_skills_using_all() {
     let project = temp.child("project");
     project.create_dir_all().unwrap();
 
-    // Use `aps sync` with a manifest that references the local git repo
-    // to verify the discovery module's logic works end-to-end.
-    // We can't use `aps add` with a local repo because parse_github_url
-    // requires a github.com URL, so we test the underlying discovery logic
-    // via unit tests in discover.rs.
-
-    // Instead, create a manifest manually with all three skills
+    // Manually create a manifest referencing skills from a local git repo.
+    // This tests that `aps sync` can install skills from a local git source.
     let manifest = format!(
         r#"entries:
   - id: refactor
@@ -1514,4 +1504,151 @@ fn add_existing_manifest_skips_duplicates_on_discover() {
     // The existing entry should still be there
     let manifest = project.child("aps.yaml");
     manifest.assert(predicate::str::contains("id: existing-skill"));
+}
+
+// ============================================================================
+// Filesystem Path Discovery Tests
+// ============================================================================
+
+/// Helper to create a local skills directory (no git, just files)
+fn create_skills_dir(dir: &std::path::Path) {
+    std::fs::create_dir_all(dir.join("skills/refactor")).unwrap();
+    std::fs::write(
+        dir.join("skills/refactor/SKILL.md"),
+        "# Refactor\n\nRefactors code automatically.\n",
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(dir.join("skills/test-gen")).unwrap();
+    std::fs::write(
+        dir.join("skills/test-gen/SKILL.md"),
+        "# Test Generation\n\nGenerates unit tests.\n",
+    )
+    .unwrap();
+
+    // Non-skill directory
+    std::fs::create_dir_all(dir.join("docs")).unwrap();
+    std::fs::write(dir.join("docs/README.md"), "# Documentation\n").unwrap();
+}
+
+#[test]
+fn add_local_path_discovers_skills_with_all() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create a local skills directory
+    let source = temp.child("my-skills");
+    source.create_dir_all().unwrap();
+    create_skills_dir(source.path());
+
+    // Create project directory
+    let project = temp.child("project");
+    project.create_dir_all().unwrap();
+
+    // Use a local path with --all --no-sync
+    aps()
+        .args([
+            "add",
+            &source.path().display().to_string(),
+            "--all",
+            "--no-sync",
+        ])
+        .current_dir(&project)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Searching for skills"))
+        .stdout(predicate::str::contains("Found 2 skill(s)"))
+        .stdout(predicate::str::contains("Added 2 entries"));
+
+    // Verify manifest was created with filesystem source entries
+    let manifest = project.child("aps.yaml");
+    manifest.assert(predicate::path::exists());
+    manifest.assert(predicate::str::contains("type: filesystem"));
+    manifest.assert(predicate::str::contains("id: refactor"));
+    manifest.assert(predicate::str::contains("id: test-gen"));
+    manifest.assert(predicate::str::contains("symlink: true"));
+}
+
+#[test]
+fn add_local_single_skill_with_skill_md() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create a single skill directory with SKILL.md
+    let source = temp.child("my-skill");
+    source.create_dir_all().unwrap();
+    source
+        .child("SKILL.md")
+        .write_str("# My Skill\n\nDoes something.\n")
+        .unwrap();
+
+    let project = temp.child("project");
+    project.create_dir_all().unwrap();
+
+    // Without --all, a dir with SKILL.md should be treated as single skill
+    aps()
+        .args(["add", &source.path().display().to_string(), "--no-sync"])
+        .current_dir(&project)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added entry 'my-skill'"));
+
+    // Verify manifest has filesystem source
+    let manifest = project.child("aps.yaml");
+    manifest.assert(predicate::str::contains("type: filesystem"));
+    manifest.assert(predicate::str::contains("id: my-skill"));
+}
+
+#[test]
+fn add_local_path_no_skills_found_errors() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Directory with no SKILL.md files
+    let source = temp.child("empty-dir");
+    source.create_dir_all().unwrap();
+    source
+        .child("README.md")
+        .write_str("# Not a skill\n")
+        .unwrap();
+
+    let project = temp.child("project");
+    project.create_dir_all().unwrap();
+
+    aps()
+        .args([
+            "add",
+            &source.path().display().to_string(),
+            "--all",
+            "--no-sync",
+        ])
+        .current_dir(&project)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No skills found"));
+}
+
+#[test]
+fn add_local_path_syncs_filesystem_skills() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create a local skills directory
+    let source = temp.child("my-skills");
+    source.create_dir_all().unwrap();
+    create_skills_dir(source.path());
+
+    let project = temp.child("project");
+    project.create_dir_all().unwrap();
+
+    // Add and sync
+    aps()
+        .args(["add", &source.path().display().to_string(), "--all"])
+        .current_dir(&project)
+        .assert()
+        .success();
+
+    // Verify skills were synced (symlinked by default)
+    project
+        .child(".claude/skills/refactor/SKILL.md")
+        .assert(predicate::path::exists());
+    project
+        .child(".claude/skills/test-gen/SKILL.md")
+        .assert(predicate::path::exists());
 }

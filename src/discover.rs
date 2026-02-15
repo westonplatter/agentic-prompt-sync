@@ -1,11 +1,12 @@
-//! Skill discovery module for finding skills within a repository.
+//! Skill discovery module for finding skills within a repository or directory.
 //!
 //! Discovers skills by recursively searching for directories containing
-//! a SKILL.md file within a cloned git repository.
+//! a SKILL.md file. Supports both git repositories (via clone) and local
+//! filesystem paths.
 
 use crate::error::{ApsError, Result};
 use crate::sources::clone_and_resolve;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 use walkdir::WalkDir;
 
@@ -52,9 +53,7 @@ pub fn discover_skills_in_repo(
     };
 
     if !search_root.exists() {
-        return Err(ApsError::SourcePathNotFound {
-            path: search_root,
-        });
+        return Err(ApsError::SourcePathNotFound { path: search_root });
     }
 
     // Find all SKILL.md files
@@ -64,11 +63,43 @@ pub fn discover_skills_in_repo(
     Ok(skills)
 }
 
+/// Discover skills in a local filesystem directory.
+///
+/// - `local_path`: Path to search (supports shell variables like $HOME, ~)
+pub fn discover_skills_in_local_dir(local_path: &str) -> Result<Vec<DiscoveredSkill>> {
+    let expanded = shellexpand::full(local_path)
+        .map(|s| s.into_owned())
+        .unwrap_or_else(|_| local_path.to_string());
+
+    let path = PathBuf::from(&expanded);
+
+    // Resolve relative paths against current directory
+    let path = if path.is_relative() {
+        std::env::current_dir()
+            .map_err(|e| ApsError::io(e, "Failed to get current directory"))?
+            .join(&path)
+    } else {
+        path
+    };
+
+    info!("Discovering skills in local directory: {:?}", path);
+
+    if !path.exists() {
+        return Err(ApsError::SourcePathNotFound { path });
+    }
+
+    if !path.is_dir() {
+        return Err(ApsError::SourcePathNotFound { path });
+    }
+
+    let skills = find_skills_in_directory(&path, &path)?;
+
+    info!("Discovered {} skills", skills.len());
+    Ok(skills)
+}
+
 /// Walk a directory tree and find all directories containing a SKILL.md file.
-fn find_skills_in_directory(
-    search_root: &Path,
-    repo_root: &Path,
-) -> Result<Vec<DiscoveredSkill>> {
+fn find_skills_in_directory(search_root: &Path, repo_root: &Path) -> Result<Vec<DiscoveredSkill>> {
     let mut skills = Vec::new();
 
     for entry in WalkDir::new(search_root)
@@ -79,14 +110,16 @@ fn find_skills_in_directory(
             e.file_name() != ".git"
         })
     {
-        let entry = entry.map_err(|e| ApsError::io(
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-            format!("Failed to walk directory {:?}", search_root),
-        ))?;
+        let entry = entry.map_err(|e| {
+            ApsError::io(
+                std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                format!("Failed to walk directory {:?}", search_root),
+            )
+        })?;
 
         let path = entry.path();
 
-        // Look for SKILL.md files (case-sensitive match for SKILL.md)
+        // Look for SKILL.md or skill.md files
         if path.is_file() {
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if file_name == "SKILL.md" || file_name == "skill.md" {
@@ -111,10 +144,7 @@ fn find_skills_in_directory(
 
                 let description = extract_skill_description(path);
 
-                debug!(
-                    "Found skill: {} at {}",
-                    skill_name, repo_path
-                );
+                debug!("Found skill: {} at {}", skill_name, repo_path);
 
                 skills.push(DiscoveredSkill {
                     name: skill_name,
@@ -220,12 +250,13 @@ fn strip_frontmatter(content: &str) -> String {
     }
 }
 
-/// Truncate a string to a maximum length, adding ellipsis if needed.
+/// Truncate a string to a maximum character length, adding ellipsis if needed.
+/// Uses char boundaries to avoid panicking on multi-byte UTF-8.
 fn truncate(s: String, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s
     } else {
-        let truncated = &s[..max_len - 3];
+        let truncated: String = s.chars().take(max_len - 3).collect();
         if let Some(last_space) = truncated.rfind(' ') {
             format!("{}...", &truncated[..last_space])
         } else {
@@ -237,8 +268,8 @@ fn truncate(s: String, max_len: usize) -> String {
 /// Present a multi-select TUI for choosing which skills to add.
 /// Returns the indices of selected skills.
 pub fn prompt_skill_selection(skills: &[DiscoveredSkill]) -> Result<Vec<usize>> {
-    use dialoguer::MultiSelect;
     use console::Term;
+    use dialoguer::MultiSelect;
 
     let items: Vec<String> = skills
         .iter()
@@ -255,10 +286,12 @@ pub fn prompt_skill_selection(skills: &[DiscoveredSkill]) -> Result<Vec<usize>> 
         .with_prompt("Select skills to add (space to toggle, enter to confirm)")
         .items(&items)
         .interact_on(&Term::stderr())
-        .map_err(|e| ApsError::io(
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-            "Failed to display skill selection prompt",
-        ))?;
+        .map_err(|e| {
+            ApsError::io(
+                std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                "Failed to display skill selection prompt",
+            )
+        })?;
 
     Ok(selections)
 }
@@ -381,10 +414,7 @@ mod tests {
         .unwrap();
 
         let desc = extract_skill_description(&path);
-        assert_eq!(
-            desc,
-            Some("A quoted description here.".to_string())
-        );
+        assert_eq!(desc, Some("A quoted description here.".to_string()));
     }
 
     #[test]
@@ -407,7 +437,11 @@ mod tests {
         for name in &["zebra", "alpha", "middle"] {
             let dir = root.join(format!("skills/{}", name));
             std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("SKILL.md"), format!("# {}\n\n{} skill.\n", name, name)).unwrap();
+            std::fs::write(
+                dir.join("SKILL.md"),
+                format!("# {}\n\n{} skill.\n", name, name),
+            )
+            .unwrap();
         }
 
         let skills = find_skills_in_directory(root, root).unwrap();
@@ -433,5 +467,23 @@ mod tests {
         let skills = find_skills_in_directory(root, root).unwrap();
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].name, "test");
+    }
+
+    #[test]
+    fn test_truncate_ascii() {
+        assert_eq!(truncate("short".to_string(), 120), "short");
+        let long = "a ".repeat(100).trim().to_string();
+        let result = truncate(long, 20);
+        assert!(result.ends_with("..."));
+        assert!(result.chars().count() <= 20);
+    }
+
+    #[test]
+    fn test_truncate_multibyte_utf8() {
+        // Should not panic on multi-byte characters (emoji, CJK, etc.)
+        let emoji = "🔧 ".repeat(50);
+        let result = truncate(emoji, 20);
+        assert!(result.ends_with("..."));
+        assert!(result.chars().count() <= 20);
     }
 }

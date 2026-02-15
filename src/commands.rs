@@ -3,7 +3,9 @@ use crate::cli::{
     AddArgs, AddAssetKind, CatalogGenerateArgs, InitArgs, ManifestFormat, StatusArgs, SyncArgs,
     ValidateArgs,
 };
-use crate::discover::{discover_skills_in_repo, prompt_skill_selection};
+use crate::discover::{
+    discover_skills_in_local_dir, discover_skills_in_repo, prompt_skill_selection,
+};
 use crate::error::{ApsError, Result};
 use crate::github_url::parse_github_url;
 use crate::hooks::validate_cursor_hooks;
@@ -19,6 +21,122 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use tracing::info;
+
+/// Parsed add target — the adapter pattern for distinguishing GitHub vs. filesystem sources.
+enum ParsedAddTarget {
+    /// A GitHub URL pointing to a specific skill
+    GitHubSkill {
+        repo_url: String,
+        git_ref: String,
+        skill_path: String,
+        skill_name: Option<String>,
+    },
+    /// A GitHub URL or repo-level URL for skill discovery
+    GitHubDiscovery {
+        repo_url: String,
+        git_ref: String,
+        search_path: String,
+    },
+    /// A local filesystem path for skill discovery
+    FilesystemDiscovery {
+        /// The original path as provided by the user (preserves $HOME, ~, etc.)
+        original_path: String,
+    },
+    /// A local filesystem path pointing to a single skill
+    FilesystemSkill {
+        /// The original path as provided by the user
+        original_path: String,
+        skill_name: String,
+    },
+}
+
+/// Detect whether the input is a local filesystem path or a URL.
+fn is_local_path(input: &str) -> bool {
+    // Obvious filesystem path indicators
+    if input.starts_with('/')
+        || input.starts_with("~/")
+        || input.starts_with("./")
+        || input.starts_with("../")
+        || input.starts_with('~')
+        || input.starts_with("$HOME")
+        || input.starts_with("$USER")
+        || input.starts_with("${")
+    {
+        return true;
+    }
+
+    // Not a URL scheme → treat as path
+    if !input.contains("://") {
+        // Could be a relative path like "my-skills" — check if it exists on disk
+        let expanded = shellexpand::full(input)
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|_| input.to_string());
+        let path = std::path::Path::new(&expanded);
+        return path.exists();
+    }
+
+    false
+}
+
+/// Parse the add target into a typed enum for routing.
+fn parse_add_target(url_or_path: &str, all_flag: bool) -> Result<ParsedAddTarget> {
+    if is_local_path(url_or_path) {
+        // Check if it contains a SKILL.md (single-skill) or not (discovery)
+        let expanded = shellexpand::full(url_or_path)
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|_| url_or_path.to_string());
+
+        let expanded_path = std::path::Path::new(&expanded);
+        let expanded_path = if expanded_path.is_relative() {
+            std::env::current_dir()
+                .map_err(|e| ApsError::io(e, "Failed to get current directory"))?
+                .join(expanded_path)
+        } else {
+            expanded_path.to_path_buf()
+        };
+
+        let has_skill_md =
+            expanded_path.join("SKILL.md").exists() || expanded_path.join("skill.md").exists();
+
+        if has_skill_md && !all_flag {
+            // Single skill — directory has SKILL.md
+            let skill_name = expanded_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unnamed")
+                .to_string();
+            Ok(ParsedAddTarget::FilesystemSkill {
+                original_path: url_or_path.to_string(),
+                skill_name,
+            })
+        } else {
+            // Discovery — walk the directory for skills
+            Ok(ParsedAddTarget::FilesystemDiscovery {
+                original_path: url_or_path.to_string(),
+            })
+        }
+    } else {
+        // Parse as GitHub URL
+        let parsed = parse_github_url(url_or_path)?;
+        if parsed.is_repo_level || all_flag {
+            Ok(ParsedAddTarget::GitHubDiscovery {
+                repo_url: parsed.repo_url,
+                git_ref: parsed.git_ref,
+                search_path: parsed.path,
+            })
+        } else {
+            // Compute derived values before moving fields
+            let skill_path = parsed.skill_path().to_string();
+            let skill_name = parsed.skill_name().map(|s| s.to_string());
+            Ok(ParsedAddTarget::GitHubSkill {
+                repo_url: parsed.repo_url,
+                git_ref: parsed.git_ref,
+                skill_path,
+                skill_name,
+            })
+        }
+    }
+}
 
 /// Execute the `aps init` command
 pub fn cmd_init(args: InitArgs) -> Result<()> {
@@ -113,238 +231,59 @@ fn update_gitignore(manifest_path: &Path) -> Result<()> {
 
 /// Execute the `aps add` command
 pub fn cmd_add(args: AddArgs) -> Result<()> {
-    // Parse the GitHub URL
-    let parsed = parse_github_url(&args.url)?;
+    let target = parse_add_target(&args.url, args.all)?;
 
-    // Use the discovery flow if:
-    // - This is a repo-level URL (no specific skill path), OR
-    // - The user explicitly requested --all (discovers skills within the given path)
-    if parsed.is_repo_level || args.all {
-        return cmd_add_discover(args, &parsed.repo_url, &parsed.git_ref, &parsed.path);
-    }
-
-    // --- Single-skill flow (existing behavior) ---
-
-    // Determine the entry ID
-    let entry_id = args.id.unwrap_or_else(|| {
-        parsed
-            .skill_name()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "unnamed-skill".to_string())
-    });
-
-    // Convert CLI asset kind to manifest asset kind
-    let asset_kind = match args.kind {
-        AddAssetKind::AgentSkill => AssetKind::AgentSkill,
-        AddAssetKind::CursorRules => AssetKind::CursorRules,
-        AddAssetKind::CursorSkillsRoot => AssetKind::CursorSkillsRoot,
-        AddAssetKind::AgentsMd => AssetKind::AgentsMd,
-    };
-
-    // Get the skill path (strips SKILL.md if present)
-    let skill_path = parsed.skill_path().to_string();
-
-    // Create the new entry
-    let new_entry = Entry {
-        id: entry_id.clone(),
-        kind: asset_kind.clone(),
-        source: Some(Source::Git {
-            repo: parsed.repo_url.clone(),
-            r#ref: parsed.git_ref.clone(),
-            shallow: true,
-            path: Some(skill_path.clone()),
-        }),
-        sources: Vec::new(),
-        dest: Some(format!(
-            "{}/{}/",
-            asset_kind
-                .default_dest()
-                .to_string_lossy()
-                .trim_end_matches('/'),
-            entry_id
-        )),
-        include: Vec::new(),
-    };
-
-    // Find or create manifest
-    let manifest_path = match args.manifest.clone() {
-        Some(p) => p,
-        None => {
-            // Try to discover existing manifest, or use default in current directory
-            match discover_manifest(None) {
-                Ok((_, path)) => path,
-                Err(ApsError::ManifestNotFound) => {
-                    // Create a new manifest in current directory
-                    let path = std::env::current_dir()
-                        .map_err(|e| ApsError::io(e, "Failed to get current directory"))?
-                        .join(DEFAULT_MANIFEST_NAME);
-                    println!("Creating new manifest at {:?}", path);
-
-                    let manifest = Manifest {
-                        entries: vec![new_entry.clone()],
-                    };
-
-                    let content = serde_yaml::to_string(&manifest).map_err(|e| {
-                        ApsError::ManifestParseError {
-                            message: format!("Failed to serialize manifest: {}", e),
-                        }
-                    })?;
-
-                    fs::write(&path, &content).map_err(|e| {
-                        ApsError::io(e, format!("Failed to write manifest to {:?}", path))
-                    })?;
-
-                    println!("Added entry '{}' to manifest\n", entry_id);
-
-                    // Sync the new entry unless --no-sync is set
-                    if !args.no_sync {
-                        println!("Syncing...\n");
-                        cmd_sync(SyncArgs {
-                            manifest: Some(path),
-                            only: vec![entry_id],
-                            yes: true,
-                            ignore_manifest: false,
-                            dry_run: false,
-                            strict: false,
-                            upgrade: false,
-                        })?;
-                    } else {
-                        println!("Run `aps sync` to install the skill.");
-                    }
-
-                    return Ok(());
-                }
-                Err(e) => return Err(e),
-            }
+    match target {
+        ParsedAddTarget::GitHubSkill {
+            repo_url,
+            git_ref,
+            skill_path,
+            skill_name,
+        } => cmd_add_single_git(args, &repo_url, &git_ref, &skill_path, skill_name),
+        ParsedAddTarget::GitHubDiscovery {
+            repo_url,
+            git_ref,
+            search_path,
+        } => cmd_add_discover_git(args, &repo_url, &git_ref, &search_path),
+        ParsedAddTarget::FilesystemSkill {
+            original_path,
+            skill_name,
+        } => cmd_add_single_filesystem(args, &original_path, &skill_name),
+        ParsedAddTarget::FilesystemDiscovery { original_path } => {
+            cmd_add_discover_filesystem(args, &original_path)
         }
-    };
-
-    // Load existing manifest
-    let mut manifest = load_manifest(&manifest_path)?;
-
-    // Check for duplicate ID
-    if manifest.entries.iter().any(|e| e.id == entry_id) {
-        return Err(ApsError::DuplicateId { id: entry_id });
     }
-
-    // Add the new entry
-    manifest.entries.push(new_entry);
-
-    // Serialize and write back
-    let content = serde_yaml::to_string(&manifest).map_err(|e| ApsError::ManifestParseError {
-        message: format!("Failed to serialize manifest: {}", e),
-    })?;
-
-    fs::write(&manifest_path, &content).map_err(|e| {
-        ApsError::io(
-            e,
-            format!("Failed to write manifest to {:?}", manifest_path),
-        )
-    })?;
-
-    info!("Added entry '{}' to {:?}", entry_id, manifest_path);
-    println!("Added entry '{}' to {:?}\n", entry_id, manifest_path);
-
-    // Sync the new entry unless --no-sync is set
-    if !args.no_sync {
-        println!("Syncing...\n");
-        cmd_sync(SyncArgs {
-            manifest: args.manifest,
-            only: vec![entry_id],
-            yes: true,
-            ignore_manifest: false,
-            dry_run: false,
-            strict: false,
-            upgrade: false,
-        })?;
-    } else {
-        println!("Run `aps sync` to install the skill.");
-    }
-
-    Ok(())
 }
 
-/// Execute the discovery flow for repo-level `aps add` commands.
-/// Clones the repository, discovers skills, presents a selection TUI,
-/// and adds selected skills to the manifest.
-fn cmd_add_discover(
-    args: AddArgs,
-    repo_url: &str,
-    git_ref: &str,
-    search_path: &str,
-) -> Result<()> {
-    println!("Searching for skills in {}...\n", repo_url);
-
-    // Discover skills in the repository
-    let skills = discover_skills_in_repo(repo_url, git_ref, search_path)?;
-
-    if skills.is_empty() {
-        return Err(ApsError::NoSkillsFound);
-    }
-
-    println!("Found {} skill(s):\n", skills.len());
-    for skill in &skills {
-        if let Some(ref desc) = skill.description {
-            println!("  {} - {}", skill.name, desc);
-        } else {
-            println!("  {}", skill.name);
-        }
-    }
-    println!();
-
-    // Determine which skills to add
-    let selected_indices = if args.all {
-        // --all flag: add everything
-        (0..skills.len()).collect::<Vec<_>>()
-    } else {
-        // Interactive multi-select
-        let indices = prompt_skill_selection(&skills)?;
-        if indices.is_empty() {
-            return Err(ApsError::NoSkillsSelected);
-        }
-        indices
-    };
-
-    let selected_skills: Vec<_> = selected_indices
-        .iter()
-        .map(|&i| &skills[i])
-        .collect();
-
-    // Convert CLI asset kind to manifest asset kind
-    let asset_kind = match args.kind {
+/// Convert CLI asset kind to manifest asset kind.
+fn resolve_asset_kind(kind: &AddAssetKind) -> AssetKind {
+    match kind {
         AddAssetKind::AgentSkill => AssetKind::AgentSkill,
         AddAssetKind::CursorRules => AssetKind::CursorRules,
         AddAssetKind::CursorSkillsRoot => AssetKind::CursorSkillsRoot,
         AddAssetKind::AgentsMd => AssetKind::AgentsMd,
-    };
+    }
+}
 
-    // Build entries for each selected skill
-    let new_entries: Vec<Entry> = selected_skills
-        .iter()
-        .map(|skill| Entry {
-            id: skill.name.clone(),
-            kind: asset_kind.clone(),
-            source: Some(Source::Git {
-                repo: repo_url.to_string(),
-                r#ref: git_ref.to_string(),
-                shallow: true,
-                path: Some(skill.repo_path.clone()),
-            }),
-            sources: Vec::new(),
-            dest: Some(format!(
-                "{}/{}/",
-                asset_kind
-                    .default_dest()
-                    .to_string_lossy()
-                    .trim_end_matches('/'),
-                skill.name
-            )),
-            include: Vec::new(),
-        })
-        .collect();
+/// Compute the destination path for a skill entry.
+fn skill_dest(asset_kind: &AssetKind, entry_id: &str) -> String {
+    format!(
+        "{}/{}/",
+        asset_kind
+            .default_dest()
+            .to_string_lossy()
+            .trim_end_matches('/'),
+        entry_id
+    )
+}
 
-    // Find or create manifest
-    let manifest_path = match args.manifest.clone() {
+/// Write entries to manifest, handling new manifest creation and deduplication.
+/// Returns the list of entry IDs that were actually added.
+fn write_entries_to_manifest(
+    entries: Vec<Entry>,
+    manifest_override: Option<std::path::PathBuf>,
+) -> Result<(std::path::PathBuf, Vec<String>)> {
+    let manifest_path = match manifest_override {
         Some(p) => p,
         None => match discover_manifest(None) {
             Ok((_, path)) => path,
@@ -354,9 +293,8 @@ fn cmd_add_discover(
                     .join(DEFAULT_MANIFEST_NAME);
                 println!("Creating new manifest at {:?}", path);
 
-                let manifest = Manifest {
-                    entries: new_entries.clone(),
-                };
+                let entry_ids: Vec<String> = entries.iter().map(|e| e.id.clone()).collect();
+                let manifest = Manifest { entries };
 
                 let content =
                     serde_yaml::to_string(&manifest).map_err(|e| ApsError::ManifestParseError {
@@ -367,30 +305,7 @@ fn cmd_add_discover(
                     ApsError::io(e, format!("Failed to write manifest to {:?}", path))
                 })?;
 
-                let entry_ids: Vec<String> =
-                    new_entries.iter().map(|e| e.id.clone()).collect();
-                println!(
-                    "Added {} entries to manifest: {}\n",
-                    entry_ids.len(),
-                    entry_ids.join(", ")
-                );
-
-                if !args.no_sync {
-                    println!("Syncing...\n");
-                    cmd_sync(SyncArgs {
-                        manifest: Some(path),
-                        only: entry_ids,
-                        yes: true,
-                        ignore_manifest: false,
-                        dry_run: false,
-                        strict: false,
-                        upgrade: false,
-                    })?;
-                } else {
-                    println!("Run `aps sync` to install the skills.");
-                }
-
-                return Ok(());
+                return Ok((path, entry_ids));
             }
             Err(e) => return Err(e),
         },
@@ -399,11 +314,11 @@ fn cmd_add_discover(
     // Load existing manifest
     let mut manifest = load_manifest(&manifest_path)?;
 
-    // Check for duplicate IDs and filter out already-existing entries
+    // Deduplicate
     let mut added_ids = Vec::new();
     let mut skipped_ids = Vec::new();
 
-    for entry in &new_entries {
+    for entry in &entries {
         if manifest.entries.iter().any(|e| e.id == entry.id) {
             skipped_ids.push(entry.id.clone());
         } else {
@@ -422,10 +337,10 @@ fn cmd_add_discover(
 
     if added_ids.is_empty() {
         println!("No new entries to add (all selected skills already exist in manifest).");
-        return Ok(());
+        return Ok((manifest_path, added_ids));
     }
 
-    // Serialize and write back
+    // Write back
     let content = serde_yaml::to_string(&manifest).map_err(|e| ApsError::ManifestParseError {
         message: format!("Failed to serialize manifest: {}", e),
     })?;
@@ -437,20 +352,24 @@ fn cmd_add_discover(
         )
     })?;
 
-    info!("Added {} entries to {:?}", added_ids.len(), manifest_path);
-    println!(
-        "Added {} entries to {:?}: {}\n",
-        added_ids.len(),
-        manifest_path,
-        added_ids.join(", ")
-    );
+    Ok((manifest_path, added_ids))
+}
 
-    // Sync the new entries unless --no-sync is set
-    if !args.no_sync {
+/// Optionally sync entries after adding them.
+fn maybe_sync(
+    entry_ids: &[String],
+    no_sync: bool,
+    manifest_override: Option<std::path::PathBuf>,
+) -> Result<()> {
+    if entry_ids.is_empty() {
+        return Ok(());
+    }
+
+    if !no_sync {
         println!("Syncing...\n");
         cmd_sync(SyncArgs {
-            manifest: args.manifest,
-            only: added_ids,
+            manifest: manifest_override,
+            only: entry_ids.to_vec(),
             yes: true,
             ignore_manifest: false,
             dry_run: false,
@@ -458,10 +377,216 @@ fn cmd_add_discover(
             upgrade: false,
         })?;
     } else {
-        println!("Run `aps sync` to install the skills.");
+        println!(
+            "Run `aps sync` to install the skill{}.",
+            if entry_ids.len() > 1 { "s" } else { "" }
+        );
     }
 
     Ok(())
+}
+
+// ============================================================================
+// Git / GitHub add adapters
+// ============================================================================
+
+/// Add a single skill from a GitHub URL.
+fn cmd_add_single_git(
+    args: AddArgs,
+    repo_url: &str,
+    git_ref: &str,
+    skill_path: &str,
+    skill_name: Option<String>,
+) -> Result<()> {
+    let entry_id = args
+        .id
+        .unwrap_or_else(|| skill_name.unwrap_or_else(|| "unnamed-skill".to_string()));
+
+    // For single-skill adds, check for duplicate ID upfront
+    check_duplicate_id(&entry_id, args.manifest.as_deref())?;
+
+    let asset_kind = resolve_asset_kind(&args.kind);
+
+    let entry = Entry {
+        id: entry_id.clone(),
+        kind: asset_kind.clone(),
+        source: Some(Source::Git {
+            repo: repo_url.to_string(),
+            r#ref: git_ref.to_string(),
+            shallow: true,
+            path: Some(skill_path.to_string()),
+        }),
+        sources: Vec::new(),
+        dest: Some(skill_dest(&asset_kind, &entry_id)),
+        include: Vec::new(),
+    };
+
+    let (manifest_path, added_ids) = write_entries_to_manifest(vec![entry], args.manifest.clone())?;
+
+    if !added_ids.is_empty() {
+        info!("Added entry '{}' to {:?}", entry_id, manifest_path);
+        println!("Added entry '{}' to {:?}\n", entry_id, manifest_path);
+    }
+
+    maybe_sync(&added_ids, args.no_sync, args.manifest)
+}
+
+/// Discover and add skills from a GitHub repository.
+fn cmd_add_discover_git(
+    args: AddArgs,
+    repo_url: &str,
+    git_ref: &str,
+    search_path: &str,
+) -> Result<()> {
+    println!("Searching for skills in {}...\n", repo_url);
+    let skills = discover_skills_in_repo(repo_url, git_ref, search_path)?;
+    let source_builder = |skill: &DiscoveredSkill| Source::Git {
+        repo: repo_url.to_string(),
+        r#ref: git_ref.to_string(),
+        shallow: true,
+        path: Some(skill.repo_path.clone()),
+    };
+    cmd_add_discovered(args, skills, source_builder)
+}
+
+// ============================================================================
+// Filesystem add adapters
+// ============================================================================
+
+/// Add a single skill from a local filesystem path.
+fn cmd_add_single_filesystem(args: AddArgs, original_path: &str, skill_name: &str) -> Result<()> {
+    let entry_id = args.id.unwrap_or_else(|| skill_name.to_string());
+
+    check_duplicate_id(&entry_id, args.manifest.as_deref())?;
+
+    let asset_kind = resolve_asset_kind(&args.kind);
+
+    let entry = Entry {
+        id: entry_id.clone(),
+        kind: asset_kind.clone(),
+        source: Some(Source::Filesystem {
+            root: original_path.to_string(),
+            symlink: true,
+            path: None,
+        }),
+        sources: Vec::new(),
+        dest: Some(skill_dest(&asset_kind, &entry_id)),
+        include: Vec::new(),
+    };
+
+    let (manifest_path, added_ids) = write_entries_to_manifest(vec![entry], args.manifest.clone())?;
+
+    if !added_ids.is_empty() {
+        info!("Added entry '{}' to {:?}", entry_id, manifest_path);
+        println!("Added entry '{}' to {:?}\n", entry_id, manifest_path);
+    }
+
+    maybe_sync(&added_ids, args.no_sync, args.manifest)
+}
+
+/// Discover and add skills from a local filesystem directory.
+fn cmd_add_discover_filesystem(args: AddArgs, original_path: &str) -> Result<()> {
+    println!("Searching for skills in {}...\n", original_path);
+    let skills = discover_skills_in_local_dir(original_path)?;
+    let source_builder = |skill: &DiscoveredSkill| Source::Filesystem {
+        root: original_path.to_string(),
+        symlink: true,
+        path: Some(skill.repo_path.clone()),
+    };
+    cmd_add_discovered(args, skills, source_builder)
+}
+
+// ============================================================================
+// Shared helpers for discovery flows
+// ============================================================================
+
+use crate::discover::DiscoveredSkill;
+
+/// Shared logic for discovery-based add (both git and filesystem).
+/// Takes discovered skills and a closure to build the Source for each skill.
+fn cmd_add_discovered(
+    args: AddArgs,
+    skills: Vec<DiscoveredSkill>,
+    source_builder: impl Fn(&DiscoveredSkill) -> Source,
+) -> Result<()> {
+    if skills.is_empty() {
+        return Err(ApsError::NoSkillsFound);
+    }
+
+    print_discovered_skills(&skills);
+
+    let selected = select_skills(&skills, args.all)?;
+    let asset_kind = resolve_asset_kind(&args.kind);
+
+    let entries: Vec<Entry> = selected
+        .iter()
+        .map(|skill| Entry {
+            id: skill.name.clone(),
+            kind: asset_kind.clone(),
+            source: Some(source_builder(skill)),
+            sources: Vec::new(),
+            dest: Some(skill_dest(&asset_kind, &skill.name)),
+            include: Vec::new(),
+        })
+        .collect();
+
+    let (manifest_path, added_ids) = write_entries_to_manifest(entries, args.manifest.clone())?;
+
+    if !added_ids.is_empty() {
+        info!("Added {} entries to {:?}", added_ids.len(), manifest_path);
+        println!(
+            "Added {} entries to {:?}: {}\n",
+            added_ids.len(),
+            manifest_path,
+            added_ids.join(", ")
+        );
+    }
+
+    maybe_sync(&added_ids, args.no_sync, args.manifest)
+}
+
+/// Print the list of discovered skills.
+fn print_discovered_skills(skills: &[DiscoveredSkill]) {
+    println!("Found {} skill(s):\n", skills.len());
+    for skill in skills {
+        if let Some(ref desc) = skill.description {
+            println!("  {} - {}", skill.name, desc);
+        } else {
+            println!("  {}", skill.name);
+        }
+    }
+    println!();
+}
+
+/// Check if an entry ID already exists in the manifest. Returns error if duplicate.
+fn check_duplicate_id(entry_id: &str, manifest_override: Option<&Path>) -> Result<()> {
+    let manifest_result = match manifest_override {
+        Some(p) => load_manifest(p).ok(),
+        None => discover_manifest(None).ok().map(|(m, _)| m),
+    };
+    if let Some(manifest) = manifest_result {
+        if manifest.entries.iter().any(|e| e.id == entry_id) {
+            return Err(ApsError::DuplicateId {
+                id: entry_id.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Select skills (--all or interactive prompt).
+fn select_skills<'a>(skills: &'a [DiscoveredSkill], all: bool) -> Result<Vec<&'a DiscoveredSkill>> {
+    let indices = if all {
+        (0..skills.len()).collect::<Vec<_>>()
+    } else {
+        let indices = prompt_skill_selection(skills)?;
+        if indices.is_empty() {
+            return Err(ApsError::NoSkillsSelected);
+        }
+        indices
+    };
+
+    Ok(indices.iter().map(|&i| &skills[i]).collect())
 }
 
 /// Execute the `aps sync` command
