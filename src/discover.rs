@@ -130,10 +130,15 @@ fn find_skills_in_directory(search_root: &Path, repo_root: &Path) -> Result<Vec<
                     .unwrap_or("unnamed")
                     .to_string();
 
-                // Compute the repo-relative path
+                // Compute the repo-relative path (normalize to forward slashes for cross-platform consistency)
                 let repo_path = skill_dir
                     .strip_prefix(repo_root)
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(|p| {
+                        p.components()
+                            .map(|c| c.as_os_str().to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    })
                     .unwrap_or_default();
 
                 // Skip if this is the repo root itself
@@ -223,14 +228,15 @@ fn extract_frontmatter_field(content: &str, field: &str) -> Option<String> {
     let end_pos = rest.find("\n---")?;
     let frontmatter = &rest[..end_pos];
 
-    let prefix = format!("{}:", field);
     for line in frontmatter.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with(&prefix) {
-            let value = trimmed[prefix.len()..].trim();
-            let value = value.trim_matches('"').trim_matches('\'');
-            if !value.is_empty() {
-                return Some(value.to_string());
+        if let Some((key, value)) = trimmed.split_once(':') {
+            if key.trim() == field {
+                let value = value.trim();
+                let value = value.trim_matches('"').trim_matches('\'');
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
             }
         }
     }

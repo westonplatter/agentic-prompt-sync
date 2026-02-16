@@ -575,7 +575,7 @@ fn check_duplicate_id(entry_id: &str, manifest_override: Option<&Path>) -> Resul
 }
 
 /// Select skills (--all or interactive prompt).
-fn select_skills<'a>(skills: &'a [DiscoveredSkill], all: bool) -> Result<Vec<&'a DiscoveredSkill>> {
+fn select_skills(skills: &[DiscoveredSkill], all: bool) -> Result<Vec<&DiscoveredSkill>> {
     let indices = if all {
         (0..skills.len()).collect::<Vec<_>>()
     } else {
