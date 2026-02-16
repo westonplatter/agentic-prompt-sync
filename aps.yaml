@@ -33,24 +33,6 @@ entries:
       shallow: true
       path: skills/skill-creator
     dest: .claude/skills/skill-creator/
-  - id: doc-coauthoring
-    kind: agent_skill
-    source:
-      type: git
-      repo: https://github.com/anthropics/skills.git
-      ref: auto
-      shallow: true
-      path: skills/doc-coauthoring
-    dest: .claude/skills/doc-coauthoring/
-  - id: frontend-design
-    kind: agent_skill
-    source:
-      type: git
-      repo: https://github.com/anthropics/skills.git
-      ref: auto
-      shallow: true
-      path: skills/frontend-design
-    dest: .claude/skills/frontend-design/
   - id: internal-comms
     kind: agent_skill
     source:

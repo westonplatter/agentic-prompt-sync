@@ -7,13 +7,6 @@ entries:
     resolved_ref: main
     commit: 1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563
     checksum: sha256:b353d2d5223c9b5154f52a1d1b87c65bd0f2ed9eac5e541e88e72b4c4a614743
-  composite-agents-md:
-    source:
-      composite:
-        - https://github.com/westonplatter/agentically.git:agents-md-partials/AGENTS.rust.md
-        - https://github.com/westonplatter/agentically.git:agents-md-partials/AGENTS.pull-requests.md
-    dest: ./AGENTS.md
-    checksum: sha256:c5660664b049dcac3ca397f61805edafca1ea782c66582744fe2d98a08b35396
   skill-creator:
     source: https://github.com/anthropics/skills.git
     dest: .claude/skills/skill-creator/
@@ -26,15 +19,10 @@ entries:
     resolved_ref: main
     commit: 1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563
     checksum: sha256:3bd37a1929706db495f2609910316bb1a385a057556deb151f968e877aef39e9
-  frontend-design:
-    source: https://github.com/anthropics/skills.git
-    dest: .claude/skills/frontend-design/
-    resolved_ref: main
-    commit: 1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563
-    checksum: sha256:e70f6ce05826c48df38e09531f6adec38371f66bf6ac858faa82b2007521e7a9
-  doc-coauthoring:
-    source: https://github.com/anthropics/skills.git
-    dest: .claude/skills/doc-coauthoring/
-    resolved_ref: main
-    commit: 1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563
-    checksum: sha256:bb40097e54fbb99b14b7fab0b9b3bae502cddfcb48ba530be2c339e2cabcbc4f
+  composite-agents-md:
+    source:
+      composite:
+        - https://github.com/westonplatter/agentically.git:agents-md-partials/AGENTS.rust.md
+        - https://github.com/westonplatter/agentically.git:agents-md-partials/AGENTS.pull-requests.md
+    dest: ./AGENTS.md
+    checksum: sha256:c5660664b049dcac3ca397f61805edafca1ea782c66582744fe2d98a08b35396

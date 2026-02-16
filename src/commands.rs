@@ -555,10 +555,13 @@ fn cmd_add_discovered(
         .map(|s| existing_ids.contains(&s.name))
         .collect();
 
+    let installed_count = defaults.iter().filter(|&&d| d).count();
+    let new_count = skills.len() - installed_count;
     println!(
-        "Found {} skill(s) ({} installed):\n",
-        skills.len(),
-        defaults.iter().filter(|&&d| d).count()
+        "Found {} skill(s) ({}, {}):\n",
+        style(skills.len()).bold(),
+        style(format!("{} installed", installed_count)).green(),
+        style(format!("{} new", new_count)).cyan()
     );
 
     let selected_indices = select_skills(&skills, &defaults, args.all)?;
@@ -591,26 +594,37 @@ fn cmd_add_discovered(
     // Show confirmation summary
     let dim = Style::new().dim();
 
+    println!();
     if !to_add.is_empty() {
-        let names: Vec<&str> = to_add.iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<String> = to_add
+            .iter()
+            .map(|s| style(&s.name).bold().to_string())
+            .collect();
         println!(
-            "  {} {}",
-            style("✓").green(),
-            style(format!("Will add: {}", names.join(", "))).green()
+            "  {} {} {}",
+            style("✓").green().bold(),
+            style("Will add:").green(),
+            style(names.join(", ")).green()
         );
     }
     if !to_remove.is_empty() {
+        let names: Vec<String> = to_remove
+            .iter()
+            .map(|s| style(s).bold().to_string())
+            .collect();
         println!(
-            "  {} {}",
-            style("✗").red(),
-            style(format!("Will remove: {}", to_remove.join(", "))).red()
+            "  {} {} {}",
+            style("✗").red().bold(),
+            style("Will remove:").red(),
+            style(names.join(", ")).red()
         );
     }
     if !unchanged.is_empty() {
         println!(
-            "  {} {}",
+            "  {} {} {}",
             dim.apply_to("·"),
-            dim.apply_to(format!("Unchanged: {}", unchanged.join(", ")))
+            dim.apply_to("Unchanged:"),
+            dim.apply_to(unchanged.join(", "))
         );
     }
 

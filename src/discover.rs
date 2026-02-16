@@ -278,24 +278,138 @@ fn truncate(s: String, max_len: usize) -> String {
     }
 }
 
+/// Separator used to encode item metadata for the custom theme.
+/// Format: `{I|N}\x00{padded_name}\x00{description}`
+const ITEM_SEP: char = '\x00';
+
+/// Custom theme for the skill selection multi-select prompt.
+/// Adds a `>` arrow on the active row. Parses encoded item text to apply
+/// per-item colors: green for installed skills, cyan for new skills.
+/// Descriptions are dimmer when inactive and brighten on the active row.
+struct SkillSelectTheme {
+    inner: dialoguer::theme::ColorfulTheme,
+}
+
+impl SkillSelectTheme {
+    fn new() -> Self {
+        use console::{style, Style};
+        Self {
+            inner: dialoguer::theme::ColorfulTheme {
+                active_item_style: Style::new().for_stderr().bold().white().bright(),
+                checked_item_prefix: style("✔".to_string()).for_stderr().green(),
+                unchecked_item_prefix: style("○".to_string()).for_stderr().dim(),
+                ..dialoguer::theme::ColorfulTheme::default()
+            },
+        }
+    }
+
+    /// Encode an item for the theme to parse later.
+    fn encode_item(
+        name: &str,
+        description: Option<&str>,
+        installed: bool,
+        name_width: usize,
+    ) -> String {
+        let tag = if installed { 'I' } else { 'N' };
+        let padded = format!("{:<width$}", name, width = name_width);
+        let desc = description.unwrap_or("");
+        format!("{}{}{}{}{}", tag, ITEM_SEP, padded, ITEM_SEP, desc)
+    }
+}
+
+impl dialoguer::theme::Theme for SkillSelectTheme {
+    fn format_prompt(&self, f: &mut dyn std::fmt::Write, prompt: &str) -> std::fmt::Result {
+        self.inner.format_prompt(f, prompt)
+    }
+
+    fn format_multi_select_prompt_item(
+        &self,
+        f: &mut dyn std::fmt::Write,
+        text: &str,
+        checked: bool,
+        active: bool,
+    ) -> std::fmt::Result {
+        use console::{style, Style};
+
+        let arrow = if active {
+            format!("{}", style(">").green().bold())
+        } else {
+            " ".to_string()
+        };
+
+        let check = if checked {
+            &self.inner.checked_item_prefix
+        } else {
+            &self.inner.unchecked_item_prefix
+        };
+
+        // Parse encoded item: {I|N}\x00{padded_name}\x00{description}
+        let parts: Vec<&str> = text.splitn(3, ITEM_SEP).collect();
+        if parts.len() == 3 {
+            let installed = parts[0] == "I";
+            let name = parts[1];
+            let desc = parts[2];
+
+            let (name_style, desc_style) = if installed {
+                if active {
+                    (Style::new().green().bold(), Style::new().green())
+                } else {
+                    (Style::new().green(), Style::new().green().dim())
+                }
+            } else if active {
+                (Style::new().cyan().bold(), Style::new().cyan())
+            } else {
+                (Style::new().cyan(), Style::new().cyan().dim())
+            };
+
+            if desc.is_empty() {
+                write!(f, "{} {} {}", arrow, check, name_style.apply_to(name))
+            } else {
+                write!(
+                    f,
+                    "{} {} {}  {}",
+                    arrow,
+                    check,
+                    name_style.apply_to(name),
+                    desc_style.apply_to(desc)
+                )
+            }
+        } else {
+            // Fallback for non-encoded text
+            let styled = if active {
+                self.inner.active_item_style.apply_to(text).to_string()
+            } else {
+                text.to_string()
+            };
+            write!(f, "{} {} {}", arrow, check, styled)
+        }
+    }
+}
+
 /// Present a multi-select TUI for choosing which skills to add.
 /// Returns the indices of selected skills.
 pub fn prompt_skill_selection(skills: &[DiscoveredSkill], defaults: &[bool]) -> Result<Vec<usize>> {
     use console::Term;
     use dialoguer::MultiSelect;
 
+    let max_name_len = skills.iter().map(|s| s.name.len()).max().unwrap_or(0);
+
     let items: Vec<String> = skills
         .iter()
-        .map(|s| {
-            if let Some(ref desc) = s.description {
-                format!("{} - {}", s.name, desc)
-            } else {
-                s.name.clone()
-            }
+        .zip(defaults.iter())
+        .map(|(s, &installed)| {
+            SkillSelectTheme::encode_item(
+                &s.name,
+                s.description.as_deref(),
+                installed,
+                max_name_len,
+            )
         })
         .collect();
 
-    let selections = MultiSelect::new()
+    let theme = SkillSelectTheme::new();
+
+    let selections = MultiSelect::with_theme(&theme)
         .with_prompt("Toggle skills (space to toggle, enter to confirm)")
         .items(&items)
         .defaults(defaults)
