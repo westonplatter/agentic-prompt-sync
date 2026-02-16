@@ -1,12 +1,12 @@
 [package]
 name = "aps"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 description = "Manifest-driven CLI for syncing agentic assets"
 authors = ["APS Contributors"]
 license = "BSD-3-Clause"
-repository = "https://github.com/westonplatter/agentic-prompt-sync"
-homepage = "https://github.com/westonplatter/agentic-prompt-sync"
+repository = "https://github.com/westonplatter/aps"
+homepage = "https://github.com/westonplatter/aps"
 keywords = ["cli", "sync", "agents", "cursor", "claude"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
@@ -33,8 +33,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 
-# Date/time for timestamps
-chrono = { version = "0.4", features = ["serde"] }
+# Date/time for backup timestamps
+chrono = "0.4"
 
 # Checksum computation
 sha2 = "0.10"

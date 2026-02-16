@@ -1,13 +1,13 @@
 <div align="center"> <!-- markdownlint-disable MD033 MD041 -->
 
-# Agentic Prompt Sync (aps)
+# APS - Agentic Prompt Sync
 
 **Compose and sync your own collection of AGENTS.md, Skills, and other agentic prompts.**
 
-[![CI](https://github.com/westonplatter/agentic-prompt-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/westonplatter/agentic-prompt-sync/actions/workflows/ci.yml)
+[![CI](https://github.com/westonplatter/aps/actions/workflows/ci.yml/badge.svg)](https://github.com/westonplatter/aps/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/aps?style=flat-square)](https://crates.io/crates/aps)
 [![Downloads](https://img.shields.io/crates/d/aps?style=flat-square)](https://crates.io/crates/aps)
-[![GitHub stars](https://img.shields.io/github/stars/westonplatter/agentic-prompt-sync?style=flat-square)](https://github.com/westonplatter/agentic-prompt-sync/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/westonplatter/aps?style=flat-square)](https://github.com/westonplatter/aps/stargazers)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
 
 **Cross-platform support:** macOS • Linux • Windows
@@ -39,15 +39,15 @@ cargo install aps
 Or use curl,
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/westonplatter/agentic-prompt-sync/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/westonplatter/aps/main/install.sh | sh
 
 # or override the install location
-APS_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/westonplatter/agentic-prompt-sync/main/install.sh | sh
+APS_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/westonplatter/aps/main/install.sh | sh
 ```
 
 ### Download Binary
 
-Pre-built binaries for all platforms are available on the [Releases page](https://github.com/westonplatter/agentic-prompt-sync/releases).
+Pre-built binaries for all platforms are available on the [Releases page](https://github.com/westonplatter/aps/releases).
 
 | Platform    | Download                    |
 | ----------- | --------------------------- |
@@ -60,7 +60,7 @@ Pre-built binaries for all platforms are available on the [Releases page](https:
 ### Build from Source
 
 ```bash
-git clone https://github.com/westonplatter/agentic-prompt-sync.git
+git clone https://github.com/westonplatter/aps.git
 cd agentic-prompt-sync
 cargo build --release
 # Binary at target/release/aps
@@ -135,6 +135,62 @@ cargo build --release
 - `--id <name>` - Custom entry ID (defaults to skill folder name)
 - `--kind <type>` - Asset kind: `agent-skill`, `cursor-rules`, `cursor-skills-root`, `agents-md` (default: `agent-skill`)
 - `--no-sync` - Only add to manifest, don't sync immediately
+- `--all` - Add all discovered skills without prompting (for repo-level URLs or directories)
+- `--yes` / `-y` - Skip confirmation prompts
+
+### Skill Discovery
+
+When you point `aps add` at a repository or directory that doesn't directly contain a `SKILL.md`, aps automatically discovers all skills within it. Skills are identified by recursively searching for directories containing a `SKILL.md` file.
+
+**From a GitHub repository:**
+
+```bash
+# Discover all skills in a repo (or a subdirectory within it)
+aps add https://github.com/anthropics/skills
+
+# Narrow discovery to a specific path within the repo
+aps add https://github.com/anthropics/skills/tree/main/skills
+```
+
+**From a local directory:**
+
+```bash
+# Discover skills in a local directory
+aps add ~/my-skills
+
+# Supports shell variable expansion
+aps add $HOME/work/shared-skills
+```
+
+After discovery, aps presents an interactive toggle picker showing **all** discovered skills. Already-installed skills appear pre-checked, so you can add new skills and remove existing ones in a single pass.
+
+```bash
+Found 5 skill(s) (2 installed, 3 new):
+
+? Toggle skills (space to toggle, enter to confirm) ›
+> ✔ refactor-module  Transform monolithic Terraform configurations into reusable modules
+  ✔ plan-review      Review Terraform plan output for potential issues
+  ○ test-gen         Generate unit tests for Terraform modules
+  ○ lint-check       Lint Terraform files for best practices
+  ○ cost-estimator   Estimate cloud costs from Terraform plans
+```
+
+After confirming, aps shows a summary of changes:
+
+```bash
+  ✓ Will add: test-gen, cost-estimator
+  ✗ Will remove: plan-review
+  · Unchanged: refactor-module
+
+Proceed? [Y/n]
+```
+
+To skip prompts and add everything, use `--all`. To skip the confirmation, use `--yes` / `-y`:
+
+```bash
+aps add --all https://github.com/anthropics/skills
+aps add --yes https://github.com/anthropics/skills
+```
 
 ### Sync Options
 
