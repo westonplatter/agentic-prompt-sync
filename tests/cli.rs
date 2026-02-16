@@ -1623,12 +1623,9 @@ fn add_help_shows_usage() {
         .args(["add", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("ASSET_TYPE"))
         .stdout(predicate::str::contains("--id"))
         .stdout(predicate::str::contains("--path"))
         .stdout(predicate::str::contains("--ref"))
-        .stdout(predicate::str::contains("--no-sync"));
-        .stdout(predicate::str::contains("--kind"))
         .stdout(predicate::str::contains("--no-sync"))
         .stdout(predicate::str::contains("--all"));
 }

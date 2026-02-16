@@ -52,12 +52,10 @@ pub struct InitArgs {
 
 #[derive(Parser, Debug)]
 pub struct AddArgs {
-    /// GitHub URL or local filesystem path to a skill folder or repository.
-    /// Supports: GitHub URLs (https://github.com/owner/repo/...) and local
-    /// paths ($HOME/skills, ~/skills, ./skills). For repo-level URLs or
-    /// directories without SKILL.md, discovers skills and prompts for selection.
-    #[arg(value_name = "URL_OR_PATH")]
-    pub url: String,
+    /// Optional asset type (agent_skill, cursor_rules, cursor_skills_root, agents_md).
+    /// If omitted, defaults to agent_skill. When given, must be followed by URL or path.
+    #[arg(value_name = "ASSET_TYPE_OR_URL", num_args = 1..=2, required = true)]
+    pub positionals: Vec<String>,
 
     /// Custom entry ID (defaults to repo or path name)
     #[arg(long)]
