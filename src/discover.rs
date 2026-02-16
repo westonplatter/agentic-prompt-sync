@@ -101,6 +101,7 @@ pub fn discover_skills_in_local_dir(local_path: &str) -> Result<Vec<DiscoveredSk
 /// Walk a directory tree and find all directories containing a SKILL.md file.
 fn find_skills_in_directory(search_root: &Path, repo_root: &Path) -> Result<Vec<DiscoveredSkill>> {
     let mut skills = Vec::new();
+    let mut seen_dirs = std::collections::HashSet::new();
 
     for entry in WalkDir::new(search_root)
         .follow_links(false)
@@ -119,11 +120,17 @@ fn find_skills_in_directory(search_root: &Path, repo_root: &Path) -> Result<Vec<
 
         let path = entry.path();
 
-        // Look for SKILL.md or skill.md files
+        // Look for skill.md files (case-insensitive)
         if path.is_file() {
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if file_name == "SKILL.md" || file_name == "skill.md" {
+            if file_name.eq_ignore_ascii_case("skill.md") {
                 let skill_dir = path.parent().unwrap_or(path);
+
+                // Only emit one skill per directory
+                if !seen_dirs.insert(skill_dir.to_path_buf()) {
+                    debug!("Skipping duplicate skill file in {:?}", skill_dir);
+                    continue;
+                }
                 let skill_name = skill_dir
                     .file_name()
                     .and_then(|n| n.to_str())

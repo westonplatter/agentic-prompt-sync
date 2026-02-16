@@ -846,6 +846,7 @@ fn sync_shows_upgrade_available_status() {
 // ============================================================================
 
 #[test]
+#[ignore = "requires network access; run with --ignored or set APS_TEST_NETWORK=1"]
 fn sync_composite_agents_md_from_git_sources() {
     let temp = assert_fs::TempDir::new().unwrap();
 
@@ -898,6 +899,7 @@ fn sync_composite_agents_md_from_git_sources() {
 }
 
 #[test]
+#[ignore = "requires network access; run with --ignored or set APS_TEST_NETWORK=1"]
 fn sync_composite_agents_md_lockfile_is_valid_yaml() {
     let temp = assert_fs::TempDir::new().unwrap();
 
@@ -935,6 +937,7 @@ fn sync_composite_agents_md_lockfile_is_valid_yaml() {
 }
 
 #[test]
+#[ignore = "requires network access; run with --ignored or set APS_TEST_NETWORK=1"]
 fn sync_composite_agents_md_respects_locked_version() {
     let temp = assert_fs::TempDir::new().unwrap();
 

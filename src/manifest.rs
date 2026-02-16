@@ -349,8 +349,8 @@ pub fn detect_overlapping_destinations(manifest: &Manifest) -> Vec<String> {
     // Build a map of effective destination paths to entry IDs.
     // An entry with `include` filters produces sub-paths like `dest/included_item`.
     // An entry without `include` writes to `dest` directly.
-    let mut dest_to_entries: std::collections::HashMap<PathBuf, Vec<&str>> =
-        std::collections::HashMap::new();
+    let mut dest_to_entries: std::collections::BTreeMap<PathBuf, Vec<&str>> =
+        std::collections::BTreeMap::new();
 
     for entry in &manifest.entries {
         let base_dest = normalize_dest(&entry.destination());

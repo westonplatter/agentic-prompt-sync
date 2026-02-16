@@ -446,7 +446,7 @@ fn cmd_add_discover_git(
         shallow: true,
         path: Some(skill.repo_path.clone()),
     };
-    cmd_add_discovered(args, skills, source_builder)
+    cmd_add_discovered(args, skills, source_builder, repo_url)
 }
 
 // ============================================================================
@@ -493,7 +493,7 @@ fn cmd_add_discover_filesystem(args: AddArgs, original_path: &str) -> Result<()>
         symlink: true,
         path: Some(skill.repo_path.clone()),
     };
-    cmd_add_discovered(args, skills, source_builder)
+    cmd_add_discovered(args, skills, source_builder, original_path)
 }
 
 // ============================================================================
@@ -508,25 +508,46 @@ fn cmd_add_discovered(
     args: AddArgs,
     skills: Vec<DiscoveredSkill>,
     source_builder: impl Fn(&DiscoveredSkill) -> Source,
+    location: &str,
 ) -> Result<()> {
     if skills.is_empty() {
-        return Err(ApsError::NoSkillsFound);
+        return Err(ApsError::NoSkillsFound {
+            location: location.to_string(),
+        });
     }
 
     print_discovered_skills(&skills);
 
     let selected = select_skills(&skills, args.all)?;
+
+    // Detect duplicate names among selected skills and derive unique IDs from repo_path
+    let mut name_counts = std::collections::HashMap::new();
+    for skill in &selected {
+        *name_counts.entry(skill.name.as_str()).or_insert(0usize) += 1;
+    }
+    let make_id = |skill: &DiscoveredSkill| -> String {
+        if name_counts.get(skill.name.as_str()).copied().unwrap_or(0) > 1 {
+            // Use full relative path with '/' replaced by '-' for uniqueness
+            skill.repo_path.replace('/', "-")
+        } else {
+            skill.name.clone()
+        }
+    };
+
     let asset_kind = resolve_asset_kind(&args.kind);
 
     let entries: Vec<Entry> = selected
         .iter()
-        .map(|skill| Entry {
-            id: skill.name.clone(),
-            kind: asset_kind.clone(),
-            source: Some(source_builder(skill)),
-            sources: Vec::new(),
-            dest: Some(skill_dest(&asset_kind, &skill.name)),
-            include: Vec::new(),
+        .map(|skill| {
+            let id = make_id(skill);
+            Entry {
+                id: id.clone(),
+                kind: asset_kind.clone(),
+                source: Some(source_builder(skill)),
+                sources: Vec::new(),
+                dest: Some(skill_dest(&asset_kind, &id)),
+                include: Vec::new(),
+            }
         })
         .collect();
 
