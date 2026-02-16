@@ -1374,6 +1374,7 @@ fn add_repo_url_with_all_discovers_and_adds_skills() {
         ])
         .current_dir(&project)
         .assert()
+        .success()
         // This may find skills or not, but should at least trigger the discovery path
         .stdout(predicate::str::contains("Searching for skills"));
 }
