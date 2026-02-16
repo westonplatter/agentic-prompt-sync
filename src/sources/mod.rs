@@ -9,6 +9,7 @@ mod git;
 pub use filesystem::FilesystemSource;
 pub use git::{
     get_remote_commit_sha, resolve_git_source_at_commit_with_cache, resolve_git_source_with_cache,
+    clone_and_resolve, clone_at_commit, get_remote_commit_sha,
     GitCloneCache, GitSource,
 };
 

@@ -176,6 +176,21 @@ pub enum ApsError {
     #[error("Asset type '{asset_type}' requires a path within the repository")]
     #[diagnostic(code(aps::add::missing_path), help("{hint}"))]
     MissingAddPath { asset_type: String, hint: String },
+
+    #[error("No skills found in {location}")]
+    #[diagnostic(
+        code(aps::discover::no_skills),
+        help("Skills are detected by the presence of a SKILL.md file in a directory")
+    )]
+    NoSkillsFound { location: String },
+
+    #[error("No skills selected")]
+    #[diagnostic(code(aps::discover::none_selected))]
+    NoSkillsSelected,
+
+    #[error("{message}")]
+    #[diagnostic(code(aps::invalid_input))]
+    InvalidInput { message: String },
 }
 
 impl ApsError {

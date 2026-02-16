@@ -87,7 +87,7 @@ dependencies = [
 
 [[package]]
 name = "aps"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "assert_cmd",
  "assert_fs",
@@ -227,7 +227,6 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
- "serde",
  "wasm-bindgen",
  "windows-link",
 ]

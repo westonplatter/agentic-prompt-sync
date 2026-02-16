@@ -1,25 +1,28 @@
 version: 1
-aps_version: 0.1.9
+aps_version: 0.1.11
 entries:
-  address-github-comments:
-    source: https://github.com/sickn33/antigravity-awesome-skills.git
-    dest: ./.claude/skills/address-github-comments/
-    resolved_ref: main
-    commit: 72f5b9500df343bfd2e77c94a6d5306fb5d08526
-    last_updated_at: 2026-02-02T18:31:00.024418Z
-    checksum: sha256:9848155412e292ff7d03b16df2a259c55e8f1f5bd75a5757f2f68ba0d8bec0a1
   composite-agents-md:
     source:
       composite:
         - https://github.com/westonplatter/agentically.git:agents-md-partials/AGENTS.rust.md
         - https://github.com/westonplatter/agentically.git:agents-md-partials/AGENTS.pull-requests.md
     dest: ./AGENTS.md
-    last_updated_at: 2026-02-13T16:24:56.997269Z
-    checksum: sha256:c5660664b049dcac3ca397f61805edafca1ea782c66582744fe2d98a08b35396
+    checksum: sha256:11eedede54fa5217e041f613adc9f692b985972e8487261e720fc553d707bdbf
   anthropic-skills:
     source: https://github.com/anthropics/skills.git
     dest: ./.claude/skills/
     resolved_ref: main
-    commit: 69c0b1a0674149f27b61b2635f935524b6add202
-    last_updated_at: 2026-02-02T18:30:57.961246Z
-    checksum: sha256:030045ce794600899847fd8bee82c6c1e12294a14caf6f045b29ce5f854a18fa
+    commit: 1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563
+    checksum: sha256:3bd37a1929706db495f2609910316bb1a385a057556deb151f968e877aef39e9
+  internal-comms:
+    source: https://github.com/anthropics/skills.git
+    dest: .claude/skills/internal-comms/
+    resolved_ref: main
+    commit: 1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563
+    checksum: sha256:b353d2d5223c9b5154f52a1d1b87c65bd0f2ed9eac5e541e88e72b4c4a614743
+  skill-creator:
+    source: https://github.com/anthropics/skills.git
+    dest: .claude/skills/skill-creator/
+    resolved_ref: main
+    commit: 1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563
+    checksum: sha256:bdd5389ea8390277b8310b83eaa561a703c2fa08bbcf770e6394d42571f7445f
