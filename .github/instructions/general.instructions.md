@@ -1,3 +1,5 @@
+# General Instructions
+
 Act as a senior Rust engineer and review this codebase for maintainability, readability, and long-term reliability.
 
 Priorities:
