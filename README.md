@@ -164,7 +164,7 @@ aps add $HOME/work/shared-skills
 
 After discovery, aps presents an interactive toggle picker showing **all** discovered skills. Already-installed skills appear pre-checked, so you can add new skills and remove existing ones in a single pass.
 
-```
+```bash
 Found 5 skill(s) (2 installed, 3 new):
 
 ? Toggle skills (space to toggle, enter to confirm) ›
@@ -177,7 +177,7 @@ Found 5 skill(s) (2 installed, 3 new):
 
 After confirming, aps shows a summary of changes:
 
-```
+```bash
   ✓ Will add: test-gen, cost-estimator
   ✗ Will remove: plan-review
   · Unchanged: refactor-module
