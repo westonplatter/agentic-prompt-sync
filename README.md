@@ -1,6 +1,6 @@
 <div align="center"> <!-- markdownlint-disable MD033 MD041 -->
 
-# Agentic Prompt Sync (aps)
+# APS (agentic prompt sync)
 
 **Compose and sync your own collection of AGENTS.md, Skills, and other agentic prompts.**
 
