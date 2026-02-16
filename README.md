@@ -135,6 +135,49 @@ cargo build --release
 - `--id <name>` - Custom entry ID (defaults to skill folder name)
 - `--kind <type>` - Asset kind: `agent-skill`, `cursor-rules`, `cursor-skills-root`, `agents-md` (default: `agent-skill`)
 - `--no-sync` - Only add to manifest, don't sync immediately
+- `--all` - Add all discovered skills without prompting (for repo-level URLs or directories)
+
+### Skill Discovery
+
+When you point `aps add` at a repository or directory that doesn't directly contain a `SKILL.md`, aps automatically discovers all skills within it. Skills are identified by recursively searching for directories containing a `SKILL.md` file.
+
+**From a GitHub repository:**
+
+```bash
+# Discover all skills in a repo (or a subdirectory within it)
+aps add https://github.com/anthropics/skills
+
+# Narrow discovery to a specific path within the repo
+aps add https://github.com/anthropics/skills/tree/main/skills
+```
+
+**From a local directory:**
+
+```bash
+# Discover skills in a local directory
+aps add ~/my-skills
+
+# Supports shell variable expansion
+aps add $HOME/work/shared-skills
+```
+
+After discovery, aps presents an interactive multi-select prompt so you can choose which skills to add. Each skill is shown with a short description extracted from its `SKILL.md` (via YAML frontmatter `description` field or the first paragraph).
+
+```
+Found 3 skill(s):
+
+  refactor-module - Transform monolithic Terraform configurations into reusable modules
+  plan-review     - Review Terraform plan output for potential issues
+  test-gen        - Generate unit tests for Terraform modules
+
+Select skills to add (space to toggle, enter to confirm)
+```
+
+To skip the prompt and add everything, use the `--all` flag:
+
+```bash
+aps add --all https://github.com/anthropics/skills
+```
 
 ### Sync Options
 

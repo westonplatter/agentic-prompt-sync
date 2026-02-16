@@ -527,9 +527,32 @@ fn cmd_add_discovered(
         });
     }
 
-    print_discovered_skills(&skills);
+    // Filter out skills already in the manifest
+    let existing_ids = get_existing_entry_ids(args.manifest.as_deref());
+    let (available, already_installed): (Vec<_>, Vec<_>) = skills
+        .into_iter()
+        .partition(|s| !existing_ids.contains(&s.name));
 
-    let selected = select_skills(&skills, args.all)?;
+    if !already_installed.is_empty() {
+        println!(
+            "Already installed ({}): {}\n",
+            already_installed.len(),
+            already_installed
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
+    if available.is_empty() {
+        println!("All discovered skills are already installed.");
+        return Ok(());
+    }
+
+    println!("Found {} available skill(s):\n", available.len());
+
+    let selected = select_skills(&available, args.all)?;
 
     // Detect duplicate names among selected skills and derive unique IDs from repo_path
     let mut name_counts = std::collections::HashMap::new();
@@ -577,17 +600,16 @@ fn cmd_add_discovered(
     maybe_sync(&added_ids, args.no_sync, args.manifest)
 }
 
-/// Print the list of discovered skills.
-fn print_discovered_skills(skills: &[DiscoveredSkill]) {
-    println!("Found {} skill(s):\n", skills.len());
-    for skill in skills {
-        if let Some(ref desc) = skill.description {
-            println!("  {} - {}", skill.name, desc);
-        } else {
-            println!("  {}", skill.name);
-        }
+/// Get the set of entry IDs already present in the manifest.
+fn get_existing_entry_ids(manifest_override: Option<&Path>) -> std::collections::HashSet<String> {
+    let manifest_result = match manifest_override {
+        Some(p) => load_manifest(p).ok(),
+        None => discover_manifest(None).ok().map(|(m, _)| m),
+    };
+    match manifest_result {
+        Some(manifest) => manifest.entries.iter().map(|e| e.id.clone()).collect(),
+        None => std::collections::HashSet::new(),
     }
-    println!();
 }
 
 /// Check if an entry ID already exists in the manifest. Returns error if duplicate.
