@@ -173,9 +173,10 @@ pub enum ApsError {
     #[diagnostic(code(aps::add::invalid_args), help("{message}"))]
     InvalidAddArguments { message: String },
 
-    #[error("Asset type '{asset_type}' requires a path within the repository")]
-    #[diagnostic(code(aps::add::missing_path), help("{hint}"))]
-    MissingAddPath { asset_type: String, hint: String },
+    /// Not used at the moment
+    // #[error("Asset type '{asset_type}' requires a path within the repository")]
+    // #[diagnostic(code(aps::add::missing_path), help("{hint}"))]
+    // MissingAddPath { asset_type: String, hint: String },
 
     #[error("No skills found in {location}")]
     #[diagnostic(
