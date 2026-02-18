@@ -14,6 +14,10 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 use walkdir::WalkDir;
 
+/// Default filename for local agents overrides
+/// When this file exists next to the destination, its content is prepended to the compiled AGENTS.md
+pub const LOCAL_AGENTS_FILENAME: &str = "AGENTS.local.md";
+
 /// Normalize a path by removing trailing slashes
 /// This prevents issues with path operations like parent()
 fn normalize_path(path: &Path) -> PathBuf {
@@ -303,6 +307,31 @@ pub fn install_entry(
     let dest_path = manifest_dir.join(entry.destination());
     debug!("Destination path: {:?}", dest_path);
 
+    // For AgentsMd entries, check if AGENTS.local.md exists next to the destination.
+    // If found, switch to composition mode: prepend local content before the source.
+    if entry.kind == AssetKind::AgentsMd {
+        let local_agents_path = dest_path
+            .parent()
+            .unwrap_or(manifest_dir)
+            .join(LOCAL_AGENTS_FILENAME);
+
+        if local_agents_path.exists() {
+            info!(
+                "Found local agents file {:?} for entry {}, using composition mode",
+                local_agents_path, entry.id
+            );
+            return install_single_with_local(
+                entry,
+                &resolved.source_path,
+                &local_agents_path,
+                &dest_path,
+                manifest_dir,
+                lockfile,
+                options,
+            );
+        }
+    }
+
     // Check if content is unchanged AND destination is valid (no-op)
     if lockfile.checksum_matches(&entry.id, &checksum) {
         // Even with matching checksum, verify destination exists and symlink targets are correct
@@ -485,6 +514,93 @@ pub fn install_entry(
     })
 }
 
+/// Install a single AgentsMd entry with an AGENTS.local.md prepended via composition.
+/// This is used when a local agents file is detected next to the destination.
+fn install_single_with_local(
+    entry: &Entry,
+    source_path: &Path,
+    local_agents_path: &Path,
+    dest_path: &Path,
+    manifest_dir: &Path,
+    lockfile: &Lockfile,
+    options: &InstallOptions,
+) -> Result<InstallResult> {
+    // Read both sources: local first (prepend), then the main source
+    let local_source = read_source_file(local_agents_path)?;
+    let main_source = read_source_file(source_path)?;
+
+    let composed_sources = vec![local_source, main_source];
+
+    // Compose into a single markdown string
+    let compose_options = ComposeOptions {
+        add_separators: false,
+        include_source_info: false,
+    };
+    let composed_content = compose_markdown(&composed_sources, &compose_options)?;
+
+    // Compute checksum of the final composed content
+    let checksum = compute_string_checksum(&composed_content);
+    debug!(
+        "Composed content checksum (single + local): {}",
+        checksum
+    );
+
+    // Check if content is unchanged
+    if lockfile.checksum_matches(&entry.id, &checksum) && dest_path.exists() {
+        info!(
+            "Entry {} (with local) is up to date (checksum match)",
+            entry.id
+        );
+        return Ok(InstallResult {
+            id: entry.id.clone(),
+            installed: false,
+            skipped_no_change: true,
+            locked_entry: None,
+            warnings: Vec::new(),
+            dest_path: dest_path.to_path_buf(),
+            was_symlink: false,
+            upgrade_available: None,
+        });
+    }
+
+    // Handle conflicts
+    handle_conflict(dest_path, manifest_dir, options)?;
+
+    // Write the composed file
+    if !options.dry_run {
+        write_composed_file(&composed_content, dest_path)?;
+        info!(
+            "Wrote composed file (single + local) to {:?}",
+            dest_path
+        );
+    } else {
+        println!(
+            "[dry-run] Would write composed file (single + local) to {:?}",
+            dest_path
+        );
+    }
+
+    // Create locked entry - store as composite with both source paths
+    let relative_dest = entry.destination();
+    let source_paths = vec![
+        local_agents_path.to_string_lossy().to_string(),
+        source_path.to_string_lossy().to_string(),
+    ];
+    let locked_entry =
+        LockedEntry::new_composite(source_paths, &relative_dest.to_string_lossy(), checksum);
+
+    Ok(InstallResult {
+        id: entry.id.clone(),
+        installed: !options.dry_run,
+        skipped_no_change: false,
+        locked_entry: Some(locked_entry),
+        warnings: Vec::new(),
+        dest_path: dest_path.to_path_buf(),
+        was_symlink: false,
+        upgrade_available: None,
+    })
+}
+
 /// Install a composite entry (merge multiple sources into one file)
 pub fn install_composite_entry(
     entry: &Entry,
@@ -503,6 +619,24 @@ pub fn install_composite_entry(
     // Resolve all sources and collect their content
     let mut composed_sources: Vec<ComposedSource> = Vec::new();
     let mut all_checksums: Vec<String> = Vec::new();
+
+    // Check for AGENTS.local.md next to the destination and prepend if found
+    let dest_path_for_local = manifest_dir.join(entry.destination());
+    let local_agents_path = dest_path_for_local
+        .parent()
+        .unwrap_or(manifest_dir)
+        .join(LOCAL_AGENTS_FILENAME);
+
+    if local_agents_path.exists() {
+        info!(
+            "Found local agents file: {:?}, prepending to composed output",
+            local_agents_path
+        );
+        let local_source = read_source_file(&local_agents_path)?;
+        composed_sources.push(local_source);
+        let local_checksum = compute_source_checksum(&local_agents_path)?;
+        all_checksums.push(local_checksum);
+    }
 
     for source in &entry.sources {
         let adapter = source.to_adapter();

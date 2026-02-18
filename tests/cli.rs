@@ -1646,3 +1646,221 @@ fn add_local_path_syncs_filesystem_skills() {
         .child(".claude/skills/test-gen/SKILL.md")
         .assert(predicate::path::exists());
 }
+
+// ============================================================================
+// AGENTS.local.md Tests
+// ============================================================================
+
+#[test]
+fn sync_agents_md_with_local_file_prepends_content() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create source AGENTS.md
+    let source_dir = temp.child("source");
+    source_dir.create_dir_all().unwrap();
+    source_dir
+        .child("AGENTS.md")
+        .write_str("# Shared Agents\n\nShared content here.\n")
+        .unwrap();
+
+    // Create AGENTS.local.md in the project directory (next to destination)
+    temp.child("AGENTS.local.md")
+        .write_str("# Local Overrides\n\nLocal project-specific instructions.\n")
+        .unwrap();
+
+    // Create manifest with single agents_md entry (copy, not symlink)
+    let manifest = format!(
+        r#"entries:
+  - id: test-agents
+    kind: agents_md
+    source:
+      type: filesystem
+      root: {}
+      path: AGENTS.md
+      symlink: false
+    dest: ./AGENTS.md
+"#,
+        source_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Verify AGENTS.md contains both local and shared content
+    // Local content should come first (prepended)
+    let agents_md = temp.child("AGENTS.md");
+    agents_md.assert(predicate::str::contains("# Local Overrides"));
+    agents_md.assert(predicate::str::contains("Local project-specific instructions"));
+    agents_md.assert(predicate::str::contains("# Shared Agents"));
+    agents_md.assert(predicate::str::contains("Shared content here"));
+    agents_md.assert(predicate::str::contains("auto-generated"));
+
+    // Verify local content appears before shared content
+    let content = std::fs::read_to_string(agents_md.path()).unwrap();
+    let local_pos = content.find("Local Overrides").unwrap();
+    let shared_pos = content.find("Shared Agents").unwrap();
+    assert!(
+        local_pos < shared_pos,
+        "AGENTS.local.md content should appear before the source content"
+    );
+}
+
+#[test]
+fn sync_agents_md_without_local_file_works_normally() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create source AGENTS.md
+    let source_dir = temp.child("source");
+    source_dir.create_dir_all().unwrap();
+    source_dir
+        .child("AGENTS.md")
+        .write_str("# Shared Agents\n\nShared content.\n")
+        .unwrap();
+
+    // No AGENTS.local.md — should work as before
+
+    let manifest = format!(
+        r#"entries:
+  - id: test-agents
+    kind: agents_md
+    source:
+      type: filesystem
+      root: {}
+      path: AGENTS.md
+      symlink: false
+    dest: ./AGENTS.md
+"#,
+        source_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Verify file was copied normally (no auto-generated header since it's a plain copy)
+    let agents_md = temp.child("AGENTS.md");
+    agents_md.assert(predicate::str::contains("# Shared Agents"));
+    agents_md.assert(predicate::str::contains("Shared content"));
+}
+
+#[test]
+fn sync_composite_agents_md_with_local_file_prepends_content() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create source files for composition
+    let source_dir = temp.child("source");
+    source_dir.create_dir_all().unwrap();
+    source_dir
+        .child("python.md")
+        .write_str("# Python\n\nPython guidelines.\n")
+        .unwrap();
+    source_dir
+        .child("docker.md")
+        .write_str("# Docker\n\nDocker guidelines.\n")
+        .unwrap();
+
+    // Create AGENTS.local.md
+    temp.child("AGENTS.local.md")
+        .write_str("# Project-Specific\n\nThis project uses Python 3.12.\n")
+        .unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: composite-test
+    kind: composite_agents_md
+    sources:
+      - type: filesystem
+        root: {}
+        path: python.md
+      - type: filesystem
+        root: {}
+        path: docker.md
+    dest: ./AGENTS.md
+"#,
+        source_dir.path().display(),
+        source_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    // Verify AGENTS.md contains local, python, and docker content
+    let agents_md = temp.child("AGENTS.md");
+    agents_md.assert(predicate::str::contains("# Project-Specific"));
+    agents_md.assert(predicate::str::contains("Python 3.12"));
+    agents_md.assert(predicate::str::contains("# Python"));
+    agents_md.assert(predicate::str::contains("# Docker"));
+
+    // Verify local content appears first
+    let content = std::fs::read_to_string(agents_md.path()).unwrap();
+    let local_pos = content.find("Project-Specific").unwrap();
+    let python_pos = content.find("# Python").unwrap();
+    let docker_pos = content.find("# Docker").unwrap();
+    assert!(
+        local_pos < python_pos,
+        "AGENTS.local.md content should appear before python source"
+    );
+    assert!(
+        python_pos < docker_pos,
+        "Python source should appear before docker source"
+    );
+}
+
+#[test]
+fn sync_agents_md_local_file_change_triggers_resync() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Create source AGENTS.md
+    let source_dir = temp.child("source");
+    source_dir.create_dir_all().unwrap();
+    source_dir
+        .child("AGENTS.md")
+        .write_str("# Shared\n\nShared content.\n")
+        .unwrap();
+
+    // Create initial AGENTS.local.md
+    temp.child("AGENTS.local.md")
+        .write_str("# Local V1\n\nFirst version.\n")
+        .unwrap();
+
+    let manifest = format!(
+        r#"entries:
+  - id: test-agents
+    kind: agents_md
+    source:
+      type: filesystem
+      root: {}
+      path: AGENTS.md
+      symlink: false
+    dest: ./AGENTS.md
+"#,
+        source_dir.path().display()
+    );
+
+    temp.child("aps.yaml").write_str(&manifest).unwrap();
+
+    // First sync
+    aps().arg("sync").current_dir(&temp).assert().success();
+
+    let content_v1 = std::fs::read_to_string(temp.child("AGENTS.md").path()).unwrap();
+    assert!(content_v1.contains("Local V1"));
+
+    // Modify AGENTS.local.md
+    temp.child("AGENTS.local.md")
+        .write_str("# Local V2\n\nUpdated version.\n")
+        .unwrap();
+
+    // Second sync should detect change and recompose
+    aps()
+        .args(["sync", "--yes"])
+        .current_dir(&temp)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[copied]"));
+
+    let content_v2 = std::fs::read_to_string(temp.child("AGENTS.md").path()).unwrap();
+    assert!(content_v2.contains("Local V2"));
+    assert!(!content_v2.contains("Local V1"));
+}
