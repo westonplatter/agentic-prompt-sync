@@ -16,6 +16,12 @@ Pure functions when possible
 Add unit tests for behavior, not implementation
 If it’s hard to test, it’s probably doing too much.
 
+### Case-Insensitive File Name Checks
+All file name comparisons (e.g. detecting SKILL.md, README.md, or any
+well-known file) must be case-insensitive. Use `eq_ignore_ascii_case`
+in Rust rather than exact string equality. This ensures consistent
+behavior across case-sensitive and case-insensitive file systems.
+
 ## Pull Requests
 
 ### Pull Request Description
