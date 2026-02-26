@@ -1522,8 +1522,7 @@ fn print_skill_tree(path: &Path, indent: &str) {
 
                 let sub_entries = match std::fs::read_dir(item.path()) {
                     Ok(entries) => {
-                        let mut items: Vec<_> =
-                            entries.filter_map(|e| e.ok()).collect();
+                        let mut items: Vec<_> = entries.filter_map(|e| e.ok()).collect();
                         items.sort_by_key(|e| e.file_name());
                         items
                     }
@@ -1582,11 +1581,7 @@ fn print_single_skill_contents(items: &[std::fs::DirEntry], indent: &str) {
             );
         } else {
             // Highlight SKILL.md specially
-            let file_style = if name_str == "SKILL.md" {
-                &green
-            } else {
-                &dim
-            };
+            let file_style = if name_str == "SKILL.md" { &green } else { &dim };
             println!(
                 "{}{}{}",
                 indent,
