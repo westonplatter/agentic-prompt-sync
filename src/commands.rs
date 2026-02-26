@@ -1379,7 +1379,14 @@ pub fn cmd_list(args: ListArgs) -> Result<()> {
     println!();
 
     // Summary
-    let synced_count = count_synced_entries(&manifest, &manifest_path);
+    let synced_count = match lockfile {
+        Some(ref lf) => manifest
+            .entries
+            .iter()
+            .filter(|e| lf.entries.contains_key(&e.id))
+            .count(),
+        None => 0,
+    };
     let total = manifest.entries.len();
     if synced_count == total {
         println!(
@@ -1445,19 +1452,6 @@ fn format_source_short(source: &Source) -> String {
                 format!("fs: {}{}", root, sym_tag)
             }
         }
-    }
-}
-
-/// Count how many manifest entries are synced (present in lockfile)
-fn count_synced_entries(manifest: &Manifest, manifest_path: &Path) -> usize {
-    let lockfile_path = Lockfile::path_for_manifest(manifest_path);
-    match Lockfile::load(&lockfile_path) {
-        Ok(lockfile) => manifest
-            .entries
-            .iter()
-            .filter(|e| lockfile.entries.contains_key(&e.id))
-            .count(),
-        Err(_) => 0,
     }
 }
 
