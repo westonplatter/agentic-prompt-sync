@@ -131,6 +131,7 @@ cargo build --release
 | `aps sync`     | Sync all entries from manifest and install assets |
 | `aps validate` | Validate manifest schema and check sources        |
 | `aps status`   | Display last sync information from lockfile       |
+| `aps list`     | List manifest entries and their resources         |
 
 ### Common Options
 
@@ -200,6 +201,10 @@ To skip prompts and add everything, use `--all`. To skip the confirmation, use `
 aps add --all https://github.com/anthropics/skills
 aps add --yes https://github.com/anthropics/skills
 ```
+
+### List Options
+
+- `--assets` - Show on-disk asset tree for synced entries
 
 ### Sync Options
 
